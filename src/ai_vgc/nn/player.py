@@ -379,6 +379,39 @@ class ChallengeMixin:
     watch_url: str | None = None  # "https://play.pokemonshowdown.com/": print each battle's link there
     watch_open = False  # also show it in the browser, in one tab that follows each new battle
     _watching: list[str] | None = None  # [current battle url], read by the watch page's server
+    stop_after_match = False  # set by the first Ctrl-C: finish the current game / Bo3 series, then stop
+    timer = False  # turn the battle timer on in every game (so opponents can't stall)
+
+    async def teampreview(self, battle: AbstractBattle) -> str:
+        if self.timer:
+            await self.ps_client.send_message("/timer on", battle.battle_tag)
+        return await super().teampreview(battle)
+
+    def _busy(self) -> bool:
+        """A battle is still being played, or a Bo3 series has games left (the next game starts
+        within seconds; a series whose last game ended over two minutes ago was forfeited)."""
+        if any(not b.finished for b in self._battles.values()):
+            return True
+        return bool(self.series_logs) and time.time() - getattr(self, "_last_end", 0) < 120
+
+    async def _ladder(self, n_games: int):
+        # poke-env's loop, plus a graceful stop: once `stop_after_match` is set, queue no more
+        # matches, let the one in progress (and the rest of its Bo3 series) finish, then return.
+        await self.ps_client.logged_in.wait()
+        for _ in range(n_games):
+            if self.stop_after_match:
+                break
+            async with self._battle_start_condition:
+                await self.ps_client.search_ladder_game(self._format, self.next_team)
+                await self._battle_start_condition.wait()
+                while self._battle_count_queue.full():
+                    async with self._battle_end_condition:
+                        await self._battle_end_condition.wait()
+                await self._battle_semaphore.acquire()
+            while self.stop_after_match is False and self._busy():
+                await asyncio.sleep(1)  # one match at a time: Ctrl-C always lands between matches
+        while self._busy():
+            await asyncio.sleep(1)
 
     def _watch(self, url: str) -> None:
         """Point the watch tab at `url`. The first call starts a small local server and opens its
@@ -452,6 +485,7 @@ setInterval(async () => {
 
     def _battle_finished_callback(self, battle: AbstractBattle) -> None:
         super()._battle_finished_callback(battle)
+        self._last_end = time.time()
         if self.save_dir is None:
             return
         try:
@@ -621,6 +655,9 @@ def main() -> None:
     ap.add_argument("--search-k", type=int, default=6, help="our candidate joint actions")
     ap.add_argument("--search-opp-k", type=int, default=6, help="the opponent's candidate joint actions")
     ap.add_argument("--search-seeds", type=int, default=2, help="simulations per pairing")
+    ap.add_argument("--search-worlds", type=int, default=1,
+                    help="closed team sheets: score each play against this many guesses at the opponent's "
+                         "hidden sets (common sets that fit what they've shown), weighted by how likely each is")
     ap.add_argument("--search-prior", type=float, default=0.0, help="weight on the policy's log-probability")
     ap.add_argument("--adapt", action="store_true",
                     help="Bo3: pick games 2-3 previews against the opponent's last leads (bo3.py)")
@@ -645,6 +682,10 @@ def main() -> None:
     ap.add_argument("--opponent-teams", type=Path, default=None, help="team folder for the opponent (default: --teams)")
     ap.add_argument("--only", nargs="+", default=None, metavar="TEAM",
                     help="draw each match's team at random from just these --teams files (stems)")
+    ap.add_argument("--no-timer", action="store_true",
+                    help="on Showdown, don't turn the battle timer on at the start of each game")
+    ap.add_argument("--no-munchstats", action="store_true",
+                    help="--search on Showdown: don't fetch MunchStats usage for unknown opposing species")
     ap.add_argument("--closed-sheets", action="store_true",
                     help="decline open team sheets (Bo1 formats where they're optional): play closed (CTS)")
     ap.add_argument("--gauntlet", type=int, nargs=2, default=None, metavar=("PER_ROUND", "KEEP"),
@@ -702,10 +743,14 @@ def main() -> None:
                 bot = ChallengeSearchPlayer(args.model, args.rating, args.greedy, opp_model=args.opp_model,
                                             fmt=formats[0], teams_dir=args.sets or args.teams or TEAMS_DIR,
                                             showdown=args.showdown or "pokemon-showdown", k=args.search_k,
-                                            opp_k=args.search_opp_k, seeds=args.search_seeds,
+                                            opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
                                             prior=args.search_prior, **kw)
                 bot.formats = formats
                 bot.counter_t1 = args.counter_t1
+                if public and not args.no_munchstats:
+                    from ai_vgc.munchstats import Refresher
+
+                    bot.refresher = Refresher()
             else:
                 bot = ChallengeNNPlayer(args.model, args.rating, args.greedy, formats=formats, **kw)
             if public:
@@ -716,6 +761,7 @@ def main() -> None:
             bot.logs_dir = args.logs_dir
             bot.watch_url = "https://play.pokemonshowdown.com/" if public else f"http://localhost:{args.port}/"
             bot.watch_open = args.watch
+            bot.timer = public and not args.no_timer
             if args.from_:
                 bot.allowed = {to_id_str(u) for u in args.from_}
             where = "play.pokemonshowdown.com" if public else f"http://localhost:{args.port}"
@@ -727,6 +773,23 @@ def main() -> None:
                       f"(they accept in their Showdown client)", flush=True)
                 asyncio.run(bot.send_challenges(to_id_str(them), args.n))
             elif args.ladder:
+                import signal
+
+                first = []
+
+                def graceful(*_):
+                    # First Ctrl-C: finish this game (or Bo3 series) and stop; another one at least
+                    # 2 s later quits now. (A terminal Ctrl-C arrives twice: from the terminal and
+                    # forwarded by `uv run`.)
+                    if not first:
+                        first.append(time.time())
+                        bot.stop_after_match = True
+                        print("\nCtrl-C: finishing the current match, then stopping (Ctrl-C again to quit now)",
+                              flush=True)
+                    elif time.time() - first[0] > 2:
+                        raise KeyboardInterrupt
+
+                signal.signal(signal.SIGINT, graceful)
                 bot._format = args.format
                 print(f"'{args.accept}' laddering {args.format} at {where}: {args.n} games", flush=True)
                 asyncio.run(bot.ladder(args.n))
@@ -748,7 +811,7 @@ def main() -> None:
                               account_configuration=account("nns"), team=teams(), opp_model=args.opp_model,
                               fmt=args.format, teams_dir=args.sets or args.teams or TEAMS_DIR,
                               showdown=args.showdown or "pokemon-showdown", k=args.search_k,
-                              opp_k=args.search_opp_k, seeds=args.search_seeds, prior=args.search_prior, **kw)
+                              opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds, prior=args.search_prior, **kw)
             me.counter_t1 = args.counter_t1
         else:
             me = NNPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,

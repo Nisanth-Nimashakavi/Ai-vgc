@@ -125,8 +125,9 @@ def awr_weights(data: dict[str, torch.Tensor], value_path: str, dev, batch: int,
     return torch.exp(adv / (beta * adv.std())).clamp(max=w_max)
 
 
-def load(data_dir: Path) -> dict[str, torch.Tensor]:
-    parts = [dict(np.load(p)) for p in sorted(data_dir.glob("*.npz"))]
+def load(data_dir: Path, formats: list[str] | None = None) -> dict[str, torch.Tensor]:
+    paths = [p for p in sorted(data_dir.glob("*.npz")) if not formats or p.stem in formats]
+    parts = [dict(np.load(p)) for p in paths]
     if not parts:
         raise SystemExit(f"no .npz files in {data_dir}; run `python -m ai_vgc.nn.dataset` first")
     from ai_vgc.nn.encode import T
@@ -215,6 +216,8 @@ def evaluate(model: Policy, data, idx: torch.Tensor, dev, batch: int, amp, aux: 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", type=Path, default=DATA)
+    ap.add_argument("--formats", nargs="*", default=None,
+                    help="only these .npz files in --data (stems, e.g. gen9championsvgc2026regmc)")
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch", type=int, default=1024)
@@ -250,7 +253,7 @@ def main() -> None:
     else:
         amp = contextlib.nullcontext
     t0 = time.time()
-    data = load(args.data)
+    data = load(args.data, args.formats)
     n = len(data["action"])
     val = (data["game"].long() % 1000) < args.val_frac * 1000
     tr_idx, va_idx = torch.nonzero(~val)[:, 0], torch.nonzero(val)[:, 0]

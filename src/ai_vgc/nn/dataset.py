@@ -13,8 +13,9 @@ Games 2-3 of a Bo3 also carry what both players did earlier in the series (`seri
 
 --closed (closed team sheets, as in Bo1 CTS): each view drops the opponent's |showteam| line, so
 their items, abilities and moves are only known once revealed. The player's own sheet stays: it's
-what they see in-game. It also drops the series context and keeps game 1s only, which play like a
-Bo1: `uv run python -m ai_vgc.nn.dataset --closed --out data/nn_cts`.
+what they see in-game (Bo1 logs have none, so `replay` rebuilds it from what the player revealed).
+Every game is kept, Bo3 games 2-3 included, but without series context, as the Bo1 bot has none:
+`uv run python -m ai_vgc.nn.dataset --closed --out data/nn_cts`.
 
 A slot's label is -1 (ignored in the loss) when the log doesn't show what
 the player chose: it flinched, slept, was fully paralyzed, or fainted first.
@@ -133,9 +134,8 @@ def build(path: Path, workers: int, limit: int | None, chunk: int = 100, out_dir
         key = series_key(v[1])
         games = series.get(key[0], {}) if key else {}
         earlier = [games[n] for n in range(1, key[1]) if n in games] if key else []
-        if closed:  # Bo1-like: game 1s only (or games outside a series), no context
-            if not key or key[1] == 1:
-                items.append((tag, v[1], []))
+        if closed:  # every game, Bo1 or any game of a Bo3, without series context
+            items.append((tag, v[1], []))
             continue
         # A series missing an earlier game (22% on M-C) would mislabel the game number: no context.
         items.append((tag, v[1], earlier if key and len(earlier) == key[1] - 1 else []))
@@ -173,7 +173,7 @@ def main() -> None:
     ap.add_argument("--logs", type=Path, default=LOGS, help="folder of logs_<format>.json")
     ap.add_argument("--out", type=Path, default=OUT, help="folder for the .npz files")
     ap.add_argument("--closed", action="store_true",
-                    help="closed team sheets: hide the opponent's sheet, game 1s only, no series context")
+                    help="closed team sheets: hide the opponent's sheet, no series context")
     args = ap.parse_args()
     from ai_vgc.nn.encode import vocab
     vocab()  # write the vocab file once, before workers race to create it

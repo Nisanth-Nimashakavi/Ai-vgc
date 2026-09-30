@@ -189,7 +189,13 @@ def _play(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, np.ndar
             w = _players(policy)
             me = w["me"]
         me.model.load_state_dict(_state(policy))
-        opp = w["snap" if kind in ("bc", "pool", "nash") else kind]
+        opp = w["snap" if kind in ("bc", "pool", "nash", "spec") else kind]
+        pool_team = None
+        if kind == "spec":  # "model::team file": a specialist on its own team
+            from poke_env.teambuilder import ConstantTeambuilder
+
+            opp_path, team_file = opp_path.split("::")
+            pool_team, opp._team = opp._team, ConstantTeambuilder(Path(team_file).read_text())
         if opp_path:
             _load_into(opp, opp_path)
         me.episodes.clear()
@@ -207,6 +213,8 @@ def _play(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, np.ndar
         opp.reset_battles()
         me.games.clear()
         opp.__dict__.get("games", []).clear()
+        if pool_team is not None:
+            opp._team = pool_team
         return kind, data, mine
     except Exception as e:  # a stuck or broken battle: rebuild the players next time
         print(f"worker {os.getpid()}: {kind} job failed: {e!r}", flush=True)
@@ -369,7 +377,9 @@ def main() -> None:
     ap.add_argument("--rating", type=float, default=1700)
     ap.add_argument("--mix", default="self:0.5,bc:0.2,pool:0.15,heuristic:0.15",
                     help="opponent mix: self, bc (the --init policy), pool (snapshots, uniform), "
-                         "nash (snapshots, double-oracle weights), heuristic")
+                         "nash (snapshots, double-oracle weights), heuristic, spec (--specialists)")
+    ap.add_argument("--specialists", nargs="*", default=[], metavar="MODEL::TEAM",
+                    help="opponents for `spec` in --mix: each a model that plays its own team file")
     ap.add_argument("--snapshot-every", type=int, default=10)
     ap.add_argument("--ref", default=None, help="policy the KL penalty pulls towards (default: --init)")
     ap.add_argument("--pool-init", nargs="*", default=[], help="checkpoints that start the opponent pool")
@@ -450,10 +460,11 @@ def main() -> None:
                 t0 = time.time()
                 jobs = []
                 for _ in range(math.ceil(args.games / args.job_games)):
-                    kinds = [k for k in mix if k not in ("pool", "nash") or pool]
+                    kinds = [k for k in mix if (k not in ("pool", "nash") or pool) and (k != "spec" or args.specialists)]
                     kind = random.choices(kinds, [mix[k] for k in kinds])[0]
                     opp = (args.init if kind == "bc" else random.choice(pool) if kind == "pool"
-                           else random.choices(meta["pool"], meta["nash"])[0] if kind == "nash" else None)
+                           else random.choices(meta["pool"], meta["nash"])[0] if kind == "nash"
+                           else random.choice(args.specialists) if kind == "spec" else None)
                     jobs.append((str(current), kind, opp, args.job_games))
                 parts, results = [], {}
                 for kind, data, mine in ex.map(_play, jobs):

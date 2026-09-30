@@ -8,8 +8,10 @@ likely ones in the Showdown simulator and score the results with the value head.
 Each decision:
 
 1. Rebuild the position in the simulator from what our bot can see (`position`): both
-   teams from the open team sheets, the opponent's EVs guessed as the most common spread for
-   that species in the team pool, then current HP, status, boosts, weather, terrain, Trick
+   teams from the open team sheets (with closed sheets, the opponent's unseen items, abilities
+   and moves are guessed from the sets people run, see `worlds`), the opponent's stat points
+   and nature from MunchStats usage (`ai_vgc.munchstats`) or the team pool. `--search-worlds
+   N` scores each play against N guesses at all of this, weighted by likelihood, then current HP, status, boosts, weather, terrain, Trick
    Room, screens and Tailwind with turns left, Protect counters, first-turn flags (Fake Out)
    and items used up. The opponent's unrevealed back Pokemon are filled in from team preview.
 2. Our candidates are the policy's `k` most likely joint actions; the opponent's are the
@@ -45,6 +47,7 @@ from poke_env.battle import (
     DoubleBattle,
     Effect,
     Field,
+    Move,
     Pokemon,
     SideCondition,
     Target,
@@ -55,6 +58,7 @@ from poke_env.environment import DoublesEnv
 from poke_env.player import BattleOrder
 from poke_env.teambuilder import Teambuilder
 
+from ai_vgc import munchstats
 from ai_vgc.nn.encode import encode
 from ai_vgc.nn.model import Policy, masked, slot_b_mask
 from ai_vgc.nn.player import NNPlayer, action_mask, load_policy
@@ -103,28 +107,194 @@ def _species(mon: Pokemon) -> str:
     return mon.species
 
 
+USAGE_DIR = Path("data/teams")  # set_usage_<format>.json, built by `python -m ai_vgc.nn.search --usage`
+
+
 @cache
-def pool_sets(teams_dir: str) -> dict[str, list[tuple[str, str, frozenset]]]:
-    """Every (item, ability, moves) the pool has per base species, for guessing a closed sheet."""
-    out: dict[str, list] = {}
+def set_counts(teams_dir: str, fmt: str = "") -> dict[str, Counter]:
+    """How often each (item, ability, moves) set is run, per base species: every set in the team
+    pool counts once, plus the usage table from open team sheets in human logs when there is one
+    (`USAGE_DIR/set_usage_<fmt without bo3>.json`)."""
+    out: dict[str, Counter] = {}
     for f in sorted(Path(teams_dir).glob("*.txt")):
         for m in Teambuilder.parse_showdown_team(f.read_text()):
-            out.setdefault(to_id_str(m.species or m.nickname), []).append(
-                (to_id_str(m.item or ""), to_id_str(m.ability or ""), frozenset(to_id_str(x) for x in m.moves)))
+            out.setdefault(to_id_str(m.species or m.nickname), Counter())[
+                (to_id_str(m.item or ""), to_id_str(m.ability or ""), frozenset(to_id_str(x) for x in m.moves))] += 1
+    usage = USAGE_DIR / f"set_usage_{fmt.removesuffix('bo3')}.json"
+    if fmt and usage.exists():
+        for base, rows in json.loads(usage.read_text()).items():
+            for item, ability, moves, n in rows:
+                out.setdefault(base, Counter())[(item, ability, frozenset(moves))] += n
     return out
 
 
-def _guess(base: str, item: str, ability: str, moves: list[str], teams_dir: str) -> tuple[str, str, list[str]]:
-    """Closed team sheets: fill what the opponent hasn't shown with the pool set that agrees most
-    with what it has (revealed moves, then item and ability), ties to the most common set."""
-    sets = pool_sets(teams_dir).get(base)
-    if not sets or (item and ability and len(moves) >= 4):
-        return item, ability, moves
-    counts = Counter(sets)
-    best = max(counts, key=lambda st: (len(st[2] & set(moves)), (not item) or st[0] == item,
-                                       (not ability) or st[1] == ability, counts[st]))
-    extra = [m for m in sorted(best[2]) if m not in moves]
-    return item or best[0], ability or best[1], (moves + extra)[:4]
+def set_posterior(base: str, item: str, ability: str, moves: list[str], teams_dir: str,
+                  fmt: str = "") -> list[tuple[tuple[str, str, list[str]], float]]:
+    """Closed team sheets: the sets this Pokemon may run, given what it has shown (revealed moves
+    are a subset, a shown item or ability matches), weighted by how often each is run
+    (`weighted_sets`: whole sets from team sheets, matched to MunchStats' usage). Unshown
+    parts are filled in; revealed moves keep their order and come first. When nothing in the
+    usage agrees, the closest set (most revealed moves in common) stands in."""
+    if item and ability and len(moves) >= 4:
+        return [((item, ability, moves), 1.0)]
+    counts = weighted_sets(base, teams_dir, fmt)
+    if not counts:
+        return [((item, ability, moves), 1.0)]
+    seen = set(moves)
+    fits = {st: n for st, n in counts.items()
+            if seen <= st[2] and (not item or st[0] == item) and (not ability or st[1] == ability)}
+    if not fits:
+        best = max(counts, key=lambda st: (len(st[2] & seen), (not item) or st[0] == item,
+                                           (not ability) or st[1] == ability, counts[st]))
+        fits = {best: 1}
+    merged: Counter = Counter()
+    for st, n in fits.items():
+        merged[(item or st[0], ability or st[1], tuple(moves + sorted(st[2] - seen))[:4])] += n
+    total = sum(merged.values())
+    return [((i, a, list(m)), n / total) for (i, a, m), n in merged.most_common()]
+
+
+_WEIGHTED: dict[tuple, Counter] = {}
+
+
+def weighted_sets(base: str, teams_dir: str, fmt: str = "", rounds: int = 20) -> Counter:
+    """Set weights for a species: whole sets (item, ability, moves) from the team pool and the
+    open-sheet logs, which show what goes together, rescaled so that each item's, ability's and
+    move's share matches MunchStats' current usage (iterative proportional fitting; e.g.
+    Basculegion ends up Adaptability 94% / Swift Swim 6% whatever the logs said). Sets built from
+    MunchStats alone (`munch_sets`) are mixed in with a little weight, so usage the logs never
+    showed can get its share. Without MunchStats data for the species, the logs' counts as they are."""
+    munch = _munch().get(base)
+    key = (base, teams_dir, fmt, _MUNCH[0])
+    if key in _WEIGHTED:
+        return _WEIGHTED[key]
+    logged = set_counts(teams_dir, fmt).get(base, Counter())
+    extra = munch_sets(base)
+    if not munch or not munch.get("moves"):
+        out = Counter(logged) or extra
+        _WEIGHTED[key] = out
+        return out
+    w: Counter = Counter()
+    total = sum(logged.values())
+    for st, n in logged.items():
+        w[st] += n / total if total else 0
+    etotal = sum(extra.values())
+    for st, n in extra.items():  # 10% of the mass (all of it when the logs have nothing)
+        w[st] += (0.1 if total else 1.0) * n / etotal
+    items = {to_id_str(i): p / 100 for i, p in munch.get("items", [])}
+    abilities = {to_id_str(a): p / 100 for a, p in munch.get("abilities", [])}
+    moves = {to_id_str(m): p / 100 for m, p in munch.get("moves", [])}
+
+    def fit(target: dict[str, float], part) -> None:
+        # Scale each group of sets (by item, or ability) to its target share. Values the site
+        # doesn't list (its top 10 miss rare ones) keep their share of what is left over.
+        cur: Counter = Counter()
+        for st, n in w.items():
+            cur[part(st)] += n
+        mass = sum(cur.values())
+        rest = max(0.0, 1 - sum(target.values()))
+        other = sum(n for v, n in cur.items() if v not in target) / mass
+        for st in w:
+            v = part(st)
+            share = cur[v] / mass
+            want = target[v] if v in target else (rest * share / other if other else 0)
+            w[st] *= want / share if share else 0
+
+    for _ in range(rounds):
+        if items:
+            fit(items, lambda st: st[0])
+        if abilities:
+            fit(abilities, lambda st: st[1])
+        for m, p in list(moves.items())[:8]:  # a move's share = sets that carry it
+            mass = sum(w.values())
+            cur = sum(n for st, n in w.items() if m in st[2]) / mass
+            if 0 < cur < 1:
+                for st in w:
+                    w[st] *= p / cur if m in st[2] else (1 - p) / (1 - cur)
+    out = Counter({st: n for st, n in w.items() if n > 1e-6})
+    _WEIGHTED[key] = out
+    return out
+
+
+_MUNCH: tuple[float, dict] = (0.0, {})
+
+
+def _munch() -> dict:
+    """MunchStats cache (`ai_vgc.munchstats`), re-read whenever the file changes, since a
+    running bot's refresher keeps adding to it."""
+    global _MUNCH
+    try:
+        mtime = munchstats.CACHE.stat().st_mtime
+    except OSError:
+        return {}
+    if mtime != _MUNCH[0]:
+        _MUNCH = (mtime, munchstats.load())
+    return _MUNCH[1]
+
+
+def spread_prior(base: str, top: int = 12) -> list[tuple[tuple[tuple[int, ...], str], float]]:
+    """The `top` most likely (stat points, nature) for a species from MunchStats' usage, taking
+    spread and nature as independent (the site lists them separately); [] without data."""
+    entry = _munch().get(base)
+    if not entry or not entry.get("spreads"):
+        return []
+    natures = entry.get("natures") or [["Hardy", 100.0]]
+    combos = [((tuple(int(x) for x in sp.split("/")), nat), ps * pn)
+              for sp, ps in entry["spreads"] for nat, pn in natures]
+    combos = sorted(combos, key=lambda c: -c[1])[:top]
+    total = sum(p for _, p in combos)
+    return [(c, p / total) for c, p in combos]
+
+
+def munch_sets(base: str, top: int = 24) -> Counter:
+    """Sets built from MunchStats' separate move, item and ability usage, for a species no team
+    or log shows whole: the likeliest items and abilities with the four likeliest moves, or one of
+    those swapped for the next ones. Weights are products of the usages."""
+    entry = _munch().get(base)
+    if not entry or not entry.get("moves"):
+        return Counter()
+    moves = [(to_id_str(m), p / 100) for m, p in entry["moves"]]
+    items = [(to_id_str(i), p) for i, p in entry.get("items", [])[:4]] or [("", 1.0)]
+    abilities = [(to_id_str(a), p) for a, p in entry.get("abilities", [])[:2]] or [("", 1.0)]
+    core, extra = moves[:4], moves[4:7]
+    movesets = [(frozenset(m for m, _ in core), float(np.prod([p for _, p in core])))]
+    for i in range(len(core)):
+        for m, p in extra:
+            swapped = core[:i] + core[i + 1:] + [(m, p)]
+            movesets.append((frozenset(x for x, _ in swapped),
+                             float(np.prod([q for _, q in swapped])) * (1 - core[i][1]) / max(core[i][1], 1e-3)))
+    out = Counter({(i, a, ms): pi * pa * pm for i, pi in items for a, pa in abilities for ms, pm in movesets})
+    return Counter(dict(out.most_common(top)))
+
+
+def worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+    """Up to `n` guesses at the opponent's hidden sets, {name: (item, ability, moves, spread)},
+    each with its probability (the product over their Pokemon, renormalised over the ones kept).
+    Sets come from `set_posterior`; spreads (stat points and nature, which no team sheet shows)
+    from `spread_prior`, or None to use the team pool's. The most likely of both for every
+    Pokemon comes first; the rest are sampled."""
+    post = {}
+    for mon in battle.opponent_team.values():
+        species = _species(mon)
+        abilities = _pokedex()[species]["abilities"]
+        ability = to_id_str(abilities["0"]) if len(abilities) == 1 else mon.ability or ""
+        sets = set_posterior(_base(species), _item(mon), ability, list(mon.moves)[:4], teams_dir, fmt)
+        spreads = spread_prior(_base(species)) or [(None, 1.0)]
+        post[mon.name] = [((*st, sp), ps * pp) for st, ps in sets for sp, pp in spreads]
+        post[mon.name].sort(key=lambda c: -c[1])
+    if not post:
+        return [({}, 1.0)]
+    names = list(post)
+    # A world is one index into each Pokemon's posterior; index 0 is its most likely set.
+    found = {(0,) * len(names): None}
+    rng = np.random.default_rng()
+    for _ in range(8 * n):
+        if len(found) >= n:
+            break
+        found.setdefault(tuple(int(rng.choice(len(post[nm]), p=[p for _, p in post[nm]])) for nm in names), None)
+    picks = list(found)[:n]
+    ps = np.array([np.prod([post[nm][i][1] for nm, i in zip(names, pick)]) for pick in picks])
+    return [({nm: post[nm][i][0] for nm, i in zip(names, pick)}, p) for pick, p in zip(picks, ps / ps.sum())]
 
 
 @cache
@@ -147,28 +317,38 @@ def _item(mon: Pokemon) -> str:
     return "" if mon.item in (None, "unknown_item") else mon.item
 
 
-def _set(mon: Pokemon, teams_dir: str) -> dict:
-    """Showdown set for a Pokemon as the battle and open team sheets show it, with the pool's
-    spread (the exact set when it matches, else the species' most common one). With closed
-    sheets the unseen item, ability and moves are guessed from the pool (`_guess`)."""
+def _set(mon: Pokemon, teams_dir: str, world: dict | None = None) -> dict:
+    """Showdown set for a Pokemon as the battle and open team sheets show it. Spread: the world's,
+    else the team pool's when the set matches a pool team exactly, else MunchStats' most used,
+    else the pool's most common for the species. With closed
+    sheets the unseen item, ability and moves come from `world` (see `worlds`), or else the most
+    likely set (`set_posterior`)."""
     species = _species(mon)
     base = _base(species)
     abilities = _pokedex()[species]["abilities"]
     ability = to_id_str(abilities["0"]) if len(abilities) == 1 else mon.ability or ""
     moves = list(mon.moves)[:4]
     item = _item(mon)
-    if len(moves) < 4 or not item or not ability:  # closed sheets: not all of it seen yet
-        item, ability, moves = _guess(base, item, ability, moves, teams_dir)
+    spread = None
+    if world is not None and mon.name in world:
+        item, ability, moves, spread = world[mon.name]
+    elif len(moves) < 4 or not item or not ability:  # closed sheets: not all of it seen yet
+        item, ability, moves = set_posterior(base, item, ability, moves, teams_dir)[0][0]
     exact, spreads = team_pool(teams_dir)
-    evs, nature, ivs = exact.get((base, item, ability, frozenset(moves)),
-                                 spreads.get(base, ((0,) * 6, "Hardy", (31,) * 6)))
+    if spread is None and (base, item, ability, frozenset(moves)) not in exact and spread_prior(base):
+        spread = spread_prior(base)[0][0]  # no exact team match: the most used spread
+    if spread is not None:
+        evs, nature, ivs = spread[0], spread[1], (31,) * 6
+    else:
+        evs, nature, ivs = exact.get((base, item, ability, frozenset(moves)),
+                                     spreads.get(base, ((0,) * 6, "Hardy", (31,) * 6)))
     return {"name": mon.name, "species": species, "item": item, "ability": ability,
             "moves": moves, "nature": nature, "level": mon.level or 50,
             "evs": dict(zip(STATS, evs)), "ivs": dict(zip(STATS, ivs))}
 
 
-def _mon_state(mon: Pokemon, ours: bool, teams_dir: str) -> dict:
-    s = {"set": _set(mon, teams_dir), "fainted": mon.fainted, "firstTurn": mon.first_turn,
+def _mon_state(mon: Pokemon, ours: bool, teams_dir: str, world: dict | None = None) -> dict:
+    s = {"set": _set(mon, teams_dir, None if ours else world), "fainted": mon.fainted, "firstTurn": mon.first_turn,
          "protect": mon.protect_counter, "boosts": dict(mon.boosts), "item": _item(mon),
          "status": mon.status.name.lower() if mon.status and not mon.fainted else "",
          "statusTurns": mon.status_counter,
@@ -182,7 +362,7 @@ def _mon_state(mon: Pokemon, ours: bool, teams_dir: str) -> dict:
     return s
 
 
-def _side(battle: DoubleBattle, ours: bool, teams_dir: str) -> dict | None:
+def _side(battle: DoubleBattle, ours: bool, teams_dir: str, world: dict | None = None) -> dict | None:
     """The side's brought Pokemon, actives first in slot order. None when a slot can't be
     filled (it is empty and nothing has fainted to stand in for it)."""
     team = battle.team if ours else battle.opponent_team
@@ -205,16 +385,17 @@ def _side(battle: DoubleBattle, ours: bool, teams_dir: str) -> dict | None:
     order += [m for m in brought if m not in order]
     conds = battle.side_conditions if ours else battle.opponent_side_conditions
     return {
-        "mons": [_mon_state(m, ours, teams_dir) for m in order],
+        "mons": [_mon_state(m, ours, teams_dir, world) for m in order],
         "conditions": {c.name.lower().replace("_", ""): max(1, SIDE_TURNS[c] - (battle.turn - t))
                        if c in SIDE_TURNS else 0 for c, t in conds.items()},
         "megaUsed": battle.used_mega_evolve if ours else battle.opponent_used_mega_evolve,
     }
 
 
-def position(battle: DoubleBattle, fmt: str, teams_dir: str) -> dict | None:
-    """The bridge's `state` for this battle, or None when it can't be rebuilt."""
-    us, them = _side(battle, True, teams_dir), _side(battle, False, teams_dir)
+def position(battle: DoubleBattle, fmt: str, teams_dir: str, world: dict | None = None) -> dict | None:
+    """The bridge's `state` for this battle (the opponent's hidden sets from `world`), or None when
+    it can't be rebuilt."""
+    us, them = _side(battle, True, teams_dir), _side(battle, False, teams_dir, world)
     if us is None or them is None:
         return None
     st = {"format": fmt, "turn": battle.turn, "role": battle.player_role,
@@ -314,7 +495,17 @@ def _slot_options(battle: DoubleBattle, state: dict, slot: int,
     mon = battle.opponent_active_pokemon[slot]
     if mon is None or mon.fainted:
         return [("pass", 1.0)]
-    moves = list(mon.moves.values())[:4]
+    # The moves of this world's set: the ones seen (in the order the head scores them) first,
+    # then the guessed ones, which the head never saw; they get the seen moves' mean chance.
+    known = len(mon.moves)
+    moves = [Move(m, gen=9) for m in state["sides"]["them"]["mons"][slot]["set"]["moves"]][:4]
+    if probs is not None and len(moves) > known:
+        mv_p, tg_p = probs[0].copy(), probs[1].copy()
+        guess = mv_p[:known].mean() if known else 1.0
+        for i in range(known, len(moves)):
+            ally = moves[i].target in (Target.ADJACENT_ALLY, Target.ADJACENT_ALLY_OR_SELF)
+            mv_p[i], tg_p[i] = guess, np.array([0.0, 0.0, 1.0] if ally else [0.5, 0.5, 0.0])
+        probs = (mv_p, tg_p)
     # Their view: our a / our b are foe slots 1 / 2; the ally is -1 (slot a) or -2 (slot b).
     targets = [1, 2, -2 if slot == 0 else -1]
     out: dict[str, float] = {}
@@ -380,40 +571,51 @@ def values(model: Policy, battles: list[DoubleBattle], rating: float) -> np.ndar
 
 def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: DoubleBattle,
            mask: np.ndarray, fmt: str, teams_dir: str, rating: float, k: int = 6, opp_k: int = 6,
-           seeds: int = 2, prior: float = 0.0) -> tuple[np.ndarray, dict] | None:
+           seeds: int = 2, prior: float = 0.0, n_worlds: int = 1) -> tuple[np.ndarray, dict] | None:
     """(our chosen action, details) by one-turn search, or None when the position can't be
-    rebuilt."""
-    state = position(battle, fmt, teams_dir)
-    if state is None:
-        return None
+    rebuilt. With closed team sheets the opponent's hidden sets are guessed `n_worlds` ways
+    (`worlds`); each candidate is scored in every world and the scores averaged by how likely
+    each world is, so a play has to hold up against the sets they commonly run, not just one.
+    `M` and `q` in the details are the most likely world's."""
     obs = encode(battle, rating)
     ours = our_candidates(model, obs | {"mask": mask}, mask, k)
     if len(ours) < 2:
         return None
-    theirs = opp_candidates(opp_model, battle, obs, state, opp_k)
     choices = [DoublesEnv.action_to_order(a, battle, strict=False).message.removeprefix("/choose ")
                for a, _ in ours]
-    pairs = [(c, t) for c in choices for t, _ in theirs]
     seed_list = [int(s) for s in np.random.randint(1, 2**30, seeds)]
-    res = bridge.run(state, pairs, seed_list)
-    v = np.full(len(res), np.nan)
-    live, idx = [], []
-    for i, r in enumerate(res):
-        if r["winner"]:
-            v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
-        else:
-            live.append(after(battle, r["lines"]))
-            idx.append(i)
-    if live:
-        v[idx] = values(model, live, rating)
-    M = v.reshape(len(ours), len(theirs), seeds).mean(-1)
-    q = np.array([p for _, p in theirs])
-    score = M @ q + prior * np.array([lp for _, lp in ours])
+    value, first, errors, sims = np.zeros(len(ours)), None, [], 0
+    for world, w in worlds(battle, teams_dir, n_worlds, fmt):
+        state = position(battle, fmt, teams_dir, world)
+        if state is None:
+            return None
+        theirs = opp_candidates(opp_model, battle, obs, state, opp_k)
+        pairs = [(c, t) for c in choices for t, _ in theirs]
+        res = bridge.run(state, pairs, seed_list)
+        v = np.full(len(res), np.nan)
+        live, idx = [], []
+        for i, r in enumerate(res):
+            if r["winner"]:
+                v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+            else:
+                live.append(after(battle, r["lines"]))
+                idx.append(i)
+        if live:
+            v[idx] = values(model, live, rating)
+        M = v.reshape(len(ours), len(theirs), seeds).mean(-1)
+        q = np.array([p for _, p in theirs])
+        value += w * (M @ q)
+        errors += [r["err"] for r in res if r["err"]]
+        sims += len(res)
+        if first is None:
+            first = (M, q, [t for t, _ in theirs])
+    M, q, their_choices = first
+    score = value + prior * np.array([lp for _, lp in ours])
     best = int(score.argmax())
-    return ours[best][0], {"M": M, "q": q, "ours": choices, "theirs": [t for t, _ in theirs],
-                           "actions": np.stack([a for a, _ in ours]), "value": M @ q,
+    return ours[best][0], {"M": M, "q": q, "ours": choices, "theirs": their_choices,
+                           "actions": np.stack([a for a, _ in ours]), "value": value,
                            "logp": np.array([lp for _, lp in ours]), "obs": obs | {"mask": mask},
-                           "score": score, "errors": [r["err"] for r in res if r["err"]]}
+                           "score": score, "errors": errors, "sims": sims}
 
 
 class SearchPlayer(NNPlayer):
@@ -421,21 +623,29 @@ class SearchPlayer(NNPlayer):
 
     def __init__(self, *args, opp_model: Policy | str | Path | None = None, fmt: str,
                  teams_dir: str | Path, showdown: str | Path = "pokemon-showdown", k: int = 6,
-                 opp_k: int = 6, seeds: int = 2, prior: float = 0.0, **kwargs):
+                 opp_k: int = 6, seeds: int = 2, prior: float = 0.0, worlds: int = 1, **kwargs):
         super().__init__(*args, battle_format=fmt, **kwargs)
         self.opp_model = load_policy(opp_model) if isinstance(opp_model, (str, Path)) else opp_model
         self.fmt, self.teams_dir = fmt, str(teams_dir)
         self.bridge = Bridge(showdown)
-        self.k, self.opp_k, self.seeds, self.prior = k, opp_k, seeds, prior
+        self.k, self.opp_k, self.seeds, self.prior, self.worlds = k, opp_k, seeds, prior, worlds
         self.searched = self.fallbacks = self.countered = 0
         self.sims = self.sim_errors = 0  # simulated pairings, and those the bridge failed on
         self.search_time = 0.0
         self.failed_in_a_row = 0
         self.on_search = None  # called with (battle, details) after each search (exit.py records them)
+        self.refresher = None  # munchstats.Refresher: fetch unknown opposing species' usage (ladder bot)
         # Bo3: humans answer the turn 1 we played last game. With the same leads on both sides, weight
         # their best reply to our last turn-1 choice by `counter_t1` (0 = off).
         self.counter_t1 = 0.0
         self.last_t1: dict[tuple, str] = {}  # (Bo3 room, our leads, their leads) -> our turn-1 choice
+
+    async def teampreview(self, battle: AbstractBattle) -> str:
+        # Opposing species with no MunchStats data yet: fetch them in the background (search
+        # picks them up on a later turn; until then it uses the team pool's spreads).
+        if self.refresher is not None:
+            self.refresher.need([m.species for m in battle.teampreview_opponent_team])
+        return await super().teampreview(battle)
 
     async def choose_move(self, battle: AbstractBattle) -> BattleOrder:
         assert isinstance(battle, DoubleBattle)
@@ -452,7 +662,7 @@ class SearchPlayer(NNPlayer):
         t = time.time()
         try:
             out = search(self.model, self.opp_model, self.bridge, battle, mask, self.fmt, self.teams_dir,
-                         self.rating, self.k, self.opp_k, self.seeds, self.prior)
+                         self.rating, self.k, self.opp_k, self.seeds, self.prior, self.worlds)
         except Exception as e:  # a position the bridge can't handle: play the policy
             self.logger.warning("search failed on turn %s: %r", battle.turn, e)
             out = None
@@ -468,7 +678,7 @@ class SearchPlayer(NNPlayer):
             self.fallbacks += 1
             return await super().choose_move(battle)
         self.searched += 1
-        self.sims += out[1]["M"].size * self.seeds
+        self.sims += out[1]["sims"]
         self.sim_errors += len(out[1]["errors"])
         if self.on_search:
             self.on_search(battle, out[1])

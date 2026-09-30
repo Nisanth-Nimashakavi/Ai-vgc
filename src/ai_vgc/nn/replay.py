@@ -212,8 +212,72 @@ def winner(log: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+_IDENT = re.compile(r"^(p[12])[ab]: (.+)$")
+
+
+def own_sheet(log: str, role: str) -> str:
+    """A |showteam| line for `role` built from what its Pokemon show in the log: species, and the
+    item, ability and moves each one revealed. Bo1 logs without open team sheets have none, and
+    the replay needs the player's own moves; moves never used stay unknown (the player knew them,
+    the log doesn't say)."""
+    species = {}  # nickname -> species, in team order
+    for m in re.finditer(rf"^\|poke\|{role}\|([^,|]+)", log, re.M):
+        species.setdefault(m.group(1), m.group(1))
+    for m in re.finditer(rf"^\|(?:switch|drag|replace)\|{role}[ab]: ([^|]+)\|([^,|]+)", log, re.M):
+        base = m.group(2).split("-Mega")[0]
+        if m.group(1) not in species:
+            # Swap the |poke| entry for this species (listed by species) to the nickname.
+            key = next((k for k, v in species.items() if v == base and k == v), None)
+            species = {(m.group(1) if k == key else k): (base if k == key else v) for k, v in species.items()}
+            species.setdefault(m.group(1), base)
+    item, ability, moves = {}, {}, {n: [] for n in species}
+    transformed = set()  # a Transformed mon (Ditto) uses the target's moves, not its own
+
+    def mine(ident: str) -> str | None:
+        m = _IDENT.match(ident)
+        return m.group(2) if m and m.group(1) == role else None
+
+    for line in log.split("\n"):
+        parts = line.split("|")
+        if len(parts) < 4:
+            continue
+        kind, who = parts[1], mine(parts[2])
+        of = next((mine(x[5:]) for x in parts if x.startswith("[of] ")), None)
+        src = next((x for x in parts if x.startswith("[from] ")), "")
+        if kind == "-transform" and who:
+            transformed.add(who)
+        elif kind == "move" and who in moves and who not in transformed and not src:
+            if parts[3] not in moves[who] and len(moves[who]) < 4:
+                moves[who].append(parts[3])
+        elif kind == "-ability" and who:
+            # "|-ability|X|Copied|[from] ability: Trace|[of] Y": X has Trace, Copied is Y's.
+            ability.setdefault(who, src[16:] if src.startswith("[from] ability: ") else parts[3])
+        elif kind in ("-item", "-enditem") and who and "move:" not in src:
+            item.setdefault(who, parts[3])  # [from] ability: Frisk only says who saw it
+            if src.startswith("[from] ability: ") and of:
+                ability.setdefault(of, src[16:])
+        elif kind == "-mega" and who and len(parts) > 4:
+            item.setdefault(who, parts[4])
+        elif src.startswith("[from] item: "):
+            if n := of or who:  # Rocky Helmet names its holder with [of]; Life Orb doesn't
+                item.setdefault(n, src[13:])
+        elif src.startswith("[from] ability: "):
+            if n := of or who:
+                ability.setdefault(n, src[16:])
+    pack = lambda x: re.sub(r"[^A-Za-z0-9]", "", x)  # noqa: E731
+    # Open team sheets name each Pokemon by species (no nicknames); poke-env matches on that.
+    sets = [f"{species[n]}||{pack(item.get(n, ''))}|{pack(ability.get(n, ''))}|"
+            f"{','.join(pack(m) for m in moves[n])}|||||||" for n in species]
+    return f"|showteam|{role}|" + "]".join(sets)
+
+
 def replay(tag: str, log: str, role: str, on_decision: Callback) -> DoubleBattle:
     """Replay `log` from `role`'s view ("p1"/"p2"), calling on_decision at each choice."""
+    if f"|showteam|{role}|" not in log and "|teampreview" in log:
+        # No open team sheet (Bo1): give the player the sheet its own play reveals.
+        head, sep, rest = log.partition("|teampreview")
+        line_end = rest.index("\n") if "\n" in rest else len(rest)
+        log = head + sep + rest[:line_end] + "\n" + own_sheet(log, role) + rest[line_end:]
     username, _ = player_info(log, role)
     reader = LogReader(username, tag.split("-")[0], on_decision)
     return asyncio.run_coroutine_threadsafe(reader.follow_log(tag, log, role), POKE_LOOP).result()

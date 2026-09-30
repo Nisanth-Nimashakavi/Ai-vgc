@@ -25,7 +25,7 @@ Files next to a checkpoint share its name: `_snapshots/`, `_meta.json` (double-o
 | `all-bo3-bc-v2` | Imitation on all logs; the "human proxy" opponent | `nn_v2_all` |
 | `all-bo3-bc-v4-series` | `all-bo3-bc-v2` fine-tuned with Bo3 series context | `nn_v4_ser` |
 
-Planned: `mc-bo3-rnad-v6-<team>` (per-team specialists), `mc-cts-rnad-v6`, `mc-cts-opp-v6`.
+Planned: per-team CTS specialists `mc-cts-rnad-v7-<team>` (vs the pool) and `mc-cts-rnad-v8-<team>` (vs each other), and the CTS opponent model: `all-cts-opp-v6` (closed-sheet logs of every regulation) fine-tuned into `mc-cts-opp-v6` (Reg M-C only).
 
 ## Archive
 

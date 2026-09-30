@@ -65,6 +65,7 @@ def main() -> None:
     ap.add_argument("--rating", type=float, default=1700)
     ap.add_argument("--vary-k", type=int, default=3, help="Bo3 games 2+: preview from the policy's top k")
     ap.add_argument("--concurrency", type=int, default=8)
+    ap.add_argument("--closed-sheets", action="store_true", help="both sides decline open team sheets (Bo1 CTS)")
     ap.add_argument("--shard", default="0/1", help="i/k: play pairs i, i+k, i+2k, ...")
     ap.add_argument("--out", type=Path, default=Path("data/team_rr/rr.csv"))
     ap.add_argument("--sum", nargs="+", type=Path, default=None, help="only add up these CSVs and print the table")
@@ -87,7 +88,8 @@ def main() -> None:
         p._team = ConstantTeambuilder((args.teams / f"{team}.txt").read_text())
 
     proc = ensure_server(args.port, args.showdown)
-    common = dict(battle_format=args.format, max_concurrent_battles=args.concurrency, accept_open_team_sheet=True,
+    common = dict(battle_format=args.format, max_concurrent_battles=args.concurrency,
+                  accept_open_team_sheet=not args.closed_sheets,
                   log_level=40, server_configuration=ServerConfiguration(
                       f"ws://localhost:{args.port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?"))
     pa, pb = (NNPlayer(load_policy(entries[pairs[0][0]]), args.rating, True, account_configuration=account(n),
