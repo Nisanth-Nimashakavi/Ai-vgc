@@ -1,0 +1,59 @@
+Glalie @ Glalitite  
+Ability: Moody  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Adamant Nature  
+- Explosion  
+- Body Slam  
+- Crunch  
+- Protect  
+
+Medicham @ Sitrus Berry  
+Ability: Telepathy  
+Level: 50  
+EVs: 32 HP / 1 Def / 1 SpD / 32 Spe  
+Jolly Nature  
+- Close Combat  
+- Helping Hand  
+- Fake Out  
+- Feint  
+
+Noivern @ Normal Gem  
+Ability: Telepathy  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Boomburst  
+- Tailwind  
+- Protect  
+
+Pawmot @ Leppa Berry  
+Ability: Iron Fist  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Double Shock  
+- Close Combat  
+- Revival Blessing  
+- Protect  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Flare Blitz  
+- Head Smash  
+- Extreme Speed  
+- Protect  
+
+Basculegion (M) @ Choice Scarf  
+Ability: Adaptability  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Wave Crash  
+- Last Respects  
+- Aqua Jet  
+- Flip Turn

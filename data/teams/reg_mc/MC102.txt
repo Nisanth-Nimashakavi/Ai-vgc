@@ -1,0 +1,53 @@
+Gengar @ Gengarite  
+Ability: Cursed Body  
+EVs: 30 HP / 19 Def / 1 SpA / 11 SpD / 5 Spe  
+Modest Nature  
+- Perish Song  
+- Shadow Ball  
+- Sludge Bomb  
+- Protect  
+
+Snorlax @ Leftovers  
+Ability: Thick Fat  
+EVs: 32 HP / 32 Def / 2 SpD  
+Relaxed Nature  
+- Yawn  
+- Encore  
+- Fissure  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 31 HP / 21 Def / 14 SpD  
+Relaxed Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Protect  
+
+Scrafty @ Focus Sash  
+Ability: Intimidate  
+EVs: 32 HP / 32 Def / 2 SpD  
+Impish Nature  
+- Close Combat  
+- Knock Off  
+- Fake Out  
+- Protect  
+
+Dragonite @ Life Orb  
+Ability: Inner Focus  
+EVs: 32 HP / 26 Atk / 8 Spe  
+Adamant Nature  
+- Dragon Claw  
+- Low Kick  
+- Extreme Speed  
+- Protect  
+
+Rillaboom @ Eject Button  
+Ability: Grassy Surge  
+EVs: 32 HP / 4 Def / 30 SpD  
+Sassy Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Protect

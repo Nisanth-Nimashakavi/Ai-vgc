@@ -1,0 +1,59 @@
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 17 HP / 17 Atk / 32 Spe  
+Jolly Nature  
+- Knock Off  
+- Rock Slide  
+- Low Kick  
+- Protect  
+
+Milotic @ Sitrus Berry  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 13 Def / 2 SpD / 19 Spe  
+Calm Nature  
+- Scald  
+- Dragon Tail  
+- Ice Beam  
+- Protect  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Jolly Nature  
+- High Horsepower  
+- Iron Head  
+- Rock Slide  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 17 HP / 15 Atk / 4 Def / 15 SpD / 15 Spe  
+Adamant Nature  
+- Fake Out  
+- Grassy Glide  
+- Wood Hammer  
+- Superpower  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Dragon Pulse  
+- Tailwind  
+- Protect  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 27 HP / 13 Def / 11 SpD / 15 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect

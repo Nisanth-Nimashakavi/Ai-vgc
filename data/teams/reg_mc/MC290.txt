@@ -1,0 +1,59 @@
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 31 HP / 25 Atk / 10 SpD  
+Brave Nature  
+- Leech Life  
+- Liquidation  
+- Swords Dance  
+- Protect  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+- Protect  
+
+Armarouge @ Focus Sash  
+Ability: Weak Armor  
+Level: 50  
+EVs: 1 HP / 32 SpA / 1 SpD / 32 Spe  
+Modest Nature  
+- Armor Cannon  
+- Expanding Force  
+- Aura Sphere  
+- Protect  
+
+Indeedee-F (F) @ Sitrus Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Relaxed Nature  
+- Follow Me  
+- Trick Room  
+- Helping Hand  
+- Sing  
+
+Cinderace @ White Herb  
+Ability: Libero  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Pyro Ball  
+- High Jump Kick  
+- Sucker Punch  
+- Snarl  
+
+Meowstic-F (F) @ Meowsticite  
+Ability: Competitive  
+Level: 50  
+EVs: 16 HP / 4 Def / 17 SpA / 29 Spe  
+Timid Nature  
+- Expanding Force  
+- Alluring Voice  
+- Fake Out  
+- Protect

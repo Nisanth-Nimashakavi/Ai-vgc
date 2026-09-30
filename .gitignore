@@ -1,0 +1,25 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+.serena/
+
+# Showdown checkouts (cloned separately)
+pokemon-showdown/
+pokemon-showdown-mc/
+
+# Large or generated data: logs, built datasets, checkpoints, games, runs
+runs/
+logs/
+data/battle_logs/
+data/bot_logs/
+data/datasets/
+data/live_games/
+data/models/**/*.pt
+data/models/**/*_snapshots/
+data/models/**/*.log.jsonl
+data/nn*/
+data/team_rr/
+data/team_tests/
+*.tmp
+dist/

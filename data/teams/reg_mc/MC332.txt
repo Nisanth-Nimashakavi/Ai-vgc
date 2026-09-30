@@ -1,0 +1,59 @@
+Lucario-Mega-Z @ Lucarionite Z  
+Ability: Inner Focus  
+Level: 50  
+EVs: 31 HP / 16 SpA / 19 Spe  
+Modest Nature  
+- Flash Cannon  
+- Aura Sphere  
+- Nasty Plot  
+- Detect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 19 Atk / 15 Def  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower  
+- Fake Out  
+
+Dragapult @ Life Orb  
+Ability: Infiltrator  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Draco Meteor  
+- Shadow Ball  
+- Will-O-Wisp  
+- Protect  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Jolly Nature  
+- Head Smash  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+
+Farigiraf @ Sitrus Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 29 HP / 20 Def / 17 SpD  
+Bold Nature  
+- Expanding Force  
+- Trick Room  
+- Imprison  
+- Protect  
+
+Gyarados @ Choice Scarf  
+Ability: Intimidate  
+Level: 50  
+EVs: 5 HP / 31 Atk / 30 Spe  
+Jolly Nature  
+- Waterfall  
+- Power Whip  
+- Stone Edge  
+- Ice Fang

@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 32 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Heat Wave  
+- Protect  
+
+Rillaboom @ Rocky Helmet  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 15 Atk / 10 Def / 4 SpD / 5 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Fake Out  
+- High Horsepower  
+- Grassy Glide  
+
+Weavile @ Focus Sash  
+Ability: Pickpocket  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Triple Axel  
+- Knock Off  
+- Icy Wind  
+- Fake Out  
+
+Gengar @ Gengarite  
+Ability: Cursed Body  
+Level: 50  
+EVs: 32 HP / 5 Def / 6 SpA / 3 SpD / 20 Spe  
+Timid Nature  
+- Sludge Bomb  
+- Shadow Ball  
+- Will-O-Wisp  
+- Protect  
+
+Garchomp @ Life Orb  
+Ability: Rough Skin  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Dragon Claw  
+- Stomping Tantrum  
+- Rock Slide  
+- Protect  
+
+Annihilape @ Leftovers  
+Ability: Defiant  
+Level: 50  
+EVs: 23 HP / 16 Atk / 4 Def / 6 SpD / 17 Spe  
+Adamant Nature  
+- Drain Punch  
+- Rage Fist  
+- Bulk Up  
+- Protect

@@ -1,0 +1,59 @@
+Lucario @ Lucarionite Z  
+Ability: Inner Focus  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Aura Sphere  
+- Steel Beam  
+- Dark Pulse  
+- Detect  
+
+Indeedee-F (F) @ Rocky Helmet  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Psychic  
+- Follow Me  
+- Helping Hand  
+- Trick Room  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Rock Slide  
+- Swords Dance  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Flamethrower  
+- Power Gem  
+- Protect  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+Level: 50  
+EVs: 5 HP / 26 Def / 20 SpA / 15 Spe  
+Modest Nature  
+- Hyper Voice  
+- Hyper Beam  
+- Quick Attack  
+- Detect  
+
+Kingambit @ Focus Sash  
+Ability: Defiant  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Sucker Punch  
+- Low Kick

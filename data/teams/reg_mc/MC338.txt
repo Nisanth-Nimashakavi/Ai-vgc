@@ -1,0 +1,53 @@
+Floette-Eternal @ Floettite  
+Ability: Flower Veil  
+EVs: 28 HP / 1 Def / 5 SpA / 32 Spe  
+Modest Nature  
+- Protect  
+- Moonblast  
+- Dazzling Gleam  
+- Calm Mind  
+
+Rillaboom @ Sitrus Berry  
+Ability: Grassy Surge  
+EVs: 32 HP / 5 Atk / 21 SpD / 8 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+
+Incineroar @ Rocky Helmet  
+Ability: Intimidate  
+EVs: 32 HP / 14 Def / 20 SpD  
+Impish Nature  
+- Fake Out  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+EVs: 16 HP / 20 Atk / 30 Spe  
+Adamant Nature  
+- Protect  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Hyper Voice  
+- Draco Meteor  
+- Tailwind

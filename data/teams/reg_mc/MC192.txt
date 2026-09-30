@@ -1,0 +1,59 @@
+Absol @ Absolite Z  
+Ability: Justified  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Jolly Nature  
+- Night Slash  
+- Shadow Claw  
+- Protect  
+- Focus Energy  
+
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 29 Def / 5 SpD  
+Calm Nature  
+- Muddy Water  
+- Coil  
+- Recover  
+- Hypnosis  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Hyper Voice  
+- Tailwind  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 14 Def / 20 SpD  
+Careful Nature  
+- Fake Out  
+- Flare Blitz  
+- Darkest Lariat  
+- Parting Shot  
+
+Tsareena (F) @ Wide Lens  
+Ability: Queenly Majesty  
+Level: 50  
+EVs: 10 HP / 23 Atk / 7 Def / 26 Spe  
+Adamant Nature  
+- Power Whip  
+- Low Kick  
+- Triple Axel  
+- Helping Hand  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect

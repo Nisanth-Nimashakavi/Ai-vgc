@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Adamant Nature  
+- Wood Hammer  
+- U-turn  
+- Grassy Glide  
+- Fake Out  
+
+Dragalge @ Dragalgite  
+Ability: Adaptability  
+Level: 50  
+EVs: 23 HP / 24 SpA / 19 Spe  
+Modest Nature  
+- Draco Meteor  
+- Sludge Bomb  
+- Protect  
+- Flip Turn  
+
+Empoleon @ Rocky Helmet  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 Spe  
+Bold Nature  
+- Ice Beam  
+- Protect  
+- Flash Cannon  
+- Hydro Pump  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 26 HP / 25 Atk / 14 SpD / 1 Spe  
+Adamant Nature  
+- Throat Chop  
+- Flare Blitz  
+- Fake Out  
+- Parting Shot  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Dire Claw  
+- Swords Dance  
+- Close Combat  
+- Protect  
+
+Metagross @ Metagrossite  
+Ability: Clear Body  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Adamant Nature  
+- Steel Roller  
+- Psychic Fangs  
+- Protect  
+- Bullet Punch

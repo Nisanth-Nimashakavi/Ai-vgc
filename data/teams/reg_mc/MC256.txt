@@ -1,0 +1,53 @@
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+EVs: 13 HP / 18 Def / 17 SpA / 18 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 24 HP / 15 Atk / 14 SpD / 13 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower  
+- Fake Out  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Jolly Nature  
+- Head Smash  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+EVs: 9 HP / 22 Def / 20 SpA / 15 Spe  
+Modest Nature  
+- Hyper Voice  
+- Hyper Beam  
+- Quick Attack  
+- Detect  
+
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+EVs: 32 HP / 11 Def / 23 Spe  
+Timid Nature  
+- Zap Cannon  
+- Focus Blast  
+- Fake Out  
+- Protect  
+
+Staraptor @ Staraptite  
+Ability: Intimidate  
+EVs: 19 HP / 15 Atk / 32 Spe  
+Jolly Nature  
+- Brave Bird  
+- Close Combat  
+- Tailwind  
+- Protect

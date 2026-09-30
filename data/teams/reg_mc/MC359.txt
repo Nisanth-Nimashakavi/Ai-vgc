@@ -1,0 +1,53 @@
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+EVs: 8 HP / 27 Atk / 1 Def / 30 Spe  
+Jolly Nature  
+- Rock Slide  
+- Knock Off  
+- Low Kick  
+- Protect  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Flamethrower  
+- Protect  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Iron Head  
+- High Horsepower  
+- Rock Slide  
+- Protect  
+
+Indeedee @ Choice Scarf  
+Ability: Psychic Surge  
+EVs: 12 HP / 32 SpA / 22 Spe  
+Modest Nature  
+- Expanding Force  
+- Mystical Fire  
+- Trick  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+EVs: 20 HP / 20 Atk / 1 Def / 2 SpD / 23 Spe  
+Adamant Nature  
+- Dire Claw  
+- Close Combat  
+- Coaching  
+- Protect  
+
+Corviknight @ Psychic Seed  
+Ability: Mirror Armor  
+EVs: 32 HP / 18 Atk / 2 Def / 5 SpD / 9 Spe  
+Careful Nature  
+- Brave Bird  
+- Power Trip  
+- Bulk Up  
+- Roost

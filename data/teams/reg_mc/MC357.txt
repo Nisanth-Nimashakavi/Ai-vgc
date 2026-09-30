@@ -1,0 +1,59 @@
+Squawkabilly @ Choice Scarf  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 2 Atk / 32 Spe  
+Jolly Nature  
+- Brave Bird  
+- Parting Shot  
+- U-turn  
+- Final Gambit  
+
+Torkoal @ Charcoal  
+Ability: Drought  
+Level: 50  
+EVs: 32 HP / 1 Def / 32 SpA / 1 SpD  
+Quiet Nature  
+- Eruption  
+- Heat Wave  
+- Solar Beam  
+- Earth Power  
+
+Farigiraf @ Sitrus Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 18 HP / 32 Def / 16 SpD  
+Relaxed Nature  
+- Psychic  
+- Helping Hand  
+- Trick Room  
+- Thunderbolt  
+
+Camerupt @ Cameruptite  
+Ability: Solid Rock  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Heat Wave  
+- Earth Power  
+- Protect  
+- Ancient Power  
+
+Indeedee-F (F) @ Focus Sash  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Relaxed Nature  
+- Psychic  
+- Helping Hand  
+- Follow Me  
+- Trick Room  
+
+Hatterene (F) @ Life Orb  
+Ability: Magic Bounce  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Dazzling Gleam  
+- Expanding Force  
+- Giga Drain  
+- Trick Room

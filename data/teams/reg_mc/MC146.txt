@@ -1,0 +1,55 @@
+Genry (Gengar) @ Gengarite  
+Ability: Cursed Body  
+Shiny: Yes  
+EVs: 30 HP / 13 Def / 16 SpD / 7 Spe  
+Modest Nature  
+- Perish Song  
+- Shadow Ball  
+- Sludge Bomb  
+- Protect  
+
+BIG MAN (Snorlax) @ Leftovers  
+Ability: Thick Fat  
+EVs: 21 HP / 31 Def / 14 SpD  
+Relaxed Nature  
+- Yawn  
+- Encore  
+- Fissure  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 32 HP / 25 Def / 9 SpD  
+Relaxed Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Protect  
+
+Bober (Scrafty) @ Focus Sash  
+Ability: Intimidate  
+Shiny: Yes  
+EVs: 32 HP / 4 Def / 4 SpD / 26 Spe  
+Impish Nature  
+- Close Combat  
+- Knock Off  
+- Fake Out  
+- Protect  
+
+Whisker (Dragonite) @ Life Orb  
+Ability: Inner Focus  
+EVs: 29 HP / 32 Atk / 5 Spe  
+Adamant Nature  
+- Dragon Claw  
+- Low Kick  
+- Extreme Speed  
+- Protect  
+
+Bibizyana (Rillaboom) @ Eject Button  
+Ability: Grassy Surge  
+EVs: 32 HP / 4 Def / 30 SpD  
+Sassy Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Protect

@@ -1,0 +1,53 @@
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 31 HP / 15 Def / 20 SpD  
+Sassy Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Protect  
+
+Gengar @ Gengarite  
+Ability: Cursed Body  
+EVs: 32 HP / 6 Def / 8 SpD / 20 Spe  
+Modest Nature  
+- Shadow Ball  
+- Perish Song  
+- Sludge Bomb  
+- Protect  
+
+Rillaboom @ Eject Button  
+Ability: Grassy Surge  
+EVs: 32 HP / 12 Def / 20 SpD / 2 Spe  
+Impish Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Protect  
+
+Kommo-o @ Leftovers  
+Ability: Soundproof  
+EVs: 9 HP / 28 SpA / 29 Spe  
+Modest Nature  
+- Aura Sphere  
+- Clanging Scales  
+- Clangorous Soul  
+- Protect  
+
+Ninetales-Alola @ Choice Scarf  
+Ability: Snow Warning  
+EVs: 1 HP / 1 Def / 32 SpA / 32 Spe  
+Modest Nature  
+- Blizzard  
+- Encore  
+- Icy Wind  
+- Freeze-Dry  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+EVs: 32 HP / 25 Atk / 9 SpD  
+Adamant Nature  
+- Kowtow Cleave  
+- Sucker Punch  
+- Protect  
+- Iron Head

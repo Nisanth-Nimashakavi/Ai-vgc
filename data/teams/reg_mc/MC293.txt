@@ -1,0 +1,56 @@
+Golisopod-Mega (M) @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 29 HP / 10 Atk / 5 Def / 20 SpD / 2 Spe  
+Adamant Nature  
+- Protect  
+- Sucker Punch  
+- Iron Head  
+- Leech Life  
+
+Indeedee-F (F) @ Colbur Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 25 Def / 4 SpA / 5 SpD  
+Sassy Nature  
+- Follow Me  
+- Trick Room  
+- Helping Hand  
+- Psychic  
+
+Pelipper (F) @ Focus Sash  
+Ability: Drizzle  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Tailwind  
+- Soak  
+- Hurricane  
+
+Archaludon (F) @ Leftovers  
+Ability: Stamina  
+EVs: 24 HP / 2 Def / 5 SpA / 25 SpD / 10 Spe  
+Modest Nature  
+- Protect  
+- Snarl  
+- Flash Cannon  
+- Electro Shot  
+
+Annihilape (F) @ Choice Scarf  
+Ability: Defiant  
+EVs: 14 HP / 15 Atk / 3 Def / 4 SpD / 30 Spe  
+Jolly Nature  
+- Coaching  
+- Rain Dance  
+- Close Combat  
+- Shadow Claw  
+
+Swampert-Mega (M) @ Swampertite  
+Ability: Torrent  
+Level: 50  
+EVs: 14 HP / 30 Atk / 22 Spe  
+Adamant Nature  
+- Protect  
+- Wave Crash  
+- High Horsepower  
+- Ice Punch

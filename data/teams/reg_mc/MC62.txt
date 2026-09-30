@@ -1,0 +1,59 @@
+Mawile @ Mawilite  
+Ability: Hyper Cutter  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Rock Slide  
+- Play Rough  
+- Sucker Punch  
+- Protect  
+
+Hatterene (F) @ Life Orb  
+Ability: Magic Bounce  
+Level: 50  
+EVs: 32 HP / 32 SpA / 1 SpD  
+Quiet Nature  
+- Expanding Force  
+- Dazzling Gleam  
+- Trick Room  
+- Protect  
+
+Torkoal @ Charcoal  
+Ability: Drought  
+Level: 50  
+EVs: 32 HP / 32 SpA / 2 SpD  
+Quiet Nature  
+- Eruption  
+- Weather Ball  
+- Heat Wave  
+- Protect  
+
+Scrafty @ Scraftinite  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Fake Out  
+- Knock Off  
+- Close Combat  
+- Rock Slide  
+
+Indeedee-F (F) @ Sitrus Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 19 Def / 1 SpA / 14 SpD  
+Bold Nature  
+- Terrain Pulse  
+- Trick Room  
+- Protect  
+- Follow Me  
+
+Typhlosion-Hisui @ Choice Scarf  
+Ability: Frisk  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Eruption  
+- Shadow Ball  
+- Heat Wave  
+- Focus Blast

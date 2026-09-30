@@ -1,0 +1,59 @@
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 30 Def / 4 SpA  
+Calm Nature  
+- Muddy Water  
+- Coil  
+- Hypnosis  
+- Life Dew  
+
+Grimmsnarl (M) @ Light Clay  
+Ability: Prankster  
+Level: 50  
+EVs: 32 HP / 24 Def / 10 SpD  
+Careful Nature  
+- Spirit Break  
+- Light Screen  
+- Reflect  
+- Parting Shot  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 32 HP / 13 Def / 10 SpA / 11 SpD  
+Modest Nature  
+- Protect  
+- Make It Rain  
+- Nasty Plot  
+- Shadow Ball  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 15 HP / 32 SpA / 19 Spe  
+Modest Nature  
+- Protect  
+- Flamethrower  
+- Power Gem  
+- Draco Meteor  
+
+Farigiraf @ Sitrus Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 32 HP / 20 Def / 14 SpD  
+Bold Nature  
+- Expanding Force  
+- Helping Hand  
+- Trick Room  
+- Thunderbolt  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 5 Atk / 29 SpD  
+Adamant Nature  
+- Leech Life  
+- Protect  
+- Swords Dance  
+- Iron Head

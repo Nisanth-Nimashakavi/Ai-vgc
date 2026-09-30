@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 28 HP / 30 Atk / 2 Def / 4 SpD / 2 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Jolly Nature  
+- Head Smash  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Hyper Voice  
+- Tailwind  
+- Protect  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 22 HP / 12 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+Level: 50  
+EVs: 2 HP / 32 Def / 32 Spe  
+Timid Nature  
+- Focus Blast  
+- Zap Cannon  
+- Protect  
+- Fake Out  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 15 Atk / 10 Def / 9 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Sucker Punch  
+- Low Kick  
+- Iron Head

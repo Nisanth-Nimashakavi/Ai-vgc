@@ -1,0 +1,53 @@
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+EVs: 20 HP / 21 Def / 25 Spe  
+Timid Nature  
+- Zap Cannon  
+- Focus Blast  
+- Fake Out  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 28 HP / 32 Atk / 6 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower  
+- Fake Out  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Head Smash  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+EVs: 3 HP / 17 Def / 30 SpA / 16 Spe  
+Modest Nature  
+- Hyper Voice  
+- Hyper Beam  
+- Quick Attack  
+- Detect  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Staraptor @ Staraptite  
+Ability: Intimidate  
+EVs: 32 HP / 2 Atk / 32 Spe  
+Jolly Nature  
+- Brave Bird  
+- Close Combat  
+- Tailwind  
+- Protect

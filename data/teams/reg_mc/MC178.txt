@@ -1,0 +1,59 @@
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 21 HP / 17 Atk / 2 Def / 15 SpD / 11 Spe  
+Adamant Nature  
+- Rock Slide  
+- Protect  
+- Dragon Dance  
+- Knock Off  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Rock Slide  
+- High Horsepower  
+- Iron Head  
+- Protect  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Throat Chop  
+- Coaching  
+
+Indeedee (M) @ Choice Scarf  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Expanding Force  
+- Dazzling Gleam  
+- Hyper Voice  
+- Trick  
+
+Corviknight @ Leftovers  
+Ability: Mirror Armor  
+Level: 50  
+EVs: 19 HP / 15 Def / 32 SpD  
+Impish Nature  
+- Body Press  
+- Iron Head  
+- Bulk Up  
+- Roost  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 4 HP / 29 SpA / 1 SpD / 32 Spe  
+Modest Nature  
+- Dragon Pulse  
+- Earth Power  
+- Flamethrower  
+- Protect

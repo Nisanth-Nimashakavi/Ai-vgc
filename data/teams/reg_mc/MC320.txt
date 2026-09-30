@@ -1,0 +1,59 @@
+Metagross @ Metagrossite  
+Ability: Clear Body  
+Level: 50  
+EVs: 20 HP / 26 Atk / 1 Def / 8 SpD / 11 Spe  
+Adamant Nature  
+- Protect  
+- Psychic Fangs  
+- Bullet Punch  
+- Iron Head  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Tailwind  
+- Draco Meteor  
+- Hyper Voice  
+
+Blaziken @ Focus Sash  
+Ability: Speed Boost  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Detect  
+- Coaching  
+- Heat Wave  
+- Aura Sphere  
+
+Ninetales-Alola @ Never-Melt Ice  
+Ability: Snow Warning  
+Level: 50  
+EVs: 2 HP / 3 Def / 32 SpA / 3 SpD / 26 Spe  
+Timid Nature  
+- Protect  
+- Encore  
+- Freeze-Dry  
+- Blizzard  
+
+Basculegion (M) @ Choice Scarf  
+Ability: Adaptability  
+Level: 50  
+EVs: 4 HP / 30 Atk / 32 Spe  
+Jolly Nature  
+- Flip Turn  
+- Wave Crash  
+- Last Respects  
+- Aqua Jet  
+
+Kingambit @ Occa Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 30 HP / 32 Atk / 1 SpD / 3 Spe  
+Adamant Nature  
+- Protect  
+- Swords Dance  
+- Kowtow Cleave  
+- Sucker Punch

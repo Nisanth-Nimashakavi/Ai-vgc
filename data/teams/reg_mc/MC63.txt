@@ -1,0 +1,59 @@
+Armarouge @ Focus Sash  
+Ability: Weak Armor  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Expanding Force  
+- Armor Cannon  
+- Aura Sphere  
+- Protect  
+
+Indeedee-F (F) @ Colbur Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 30 HP / 19 Def / 17 SpD  
+Bold Nature  
+- Psychic  
+- Follow Me  
+- Helping Hand  
+- Protect  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Tailwind  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 20 HP / 10 Atk / 19 Def / 17 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Feint  
+- Fake Out  
+
+Excadrill @ Life Orb  
+Ability: Sand Rush  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- High Horsepower  
+- Earthquake  
+- Iron Head  
+- Protect  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 22 HP / 16 Atk / 28 Spe  
+Adamant Nature  
+- Rock Slide  
+- Knock Off  
+- Low Kick  
+- Protect

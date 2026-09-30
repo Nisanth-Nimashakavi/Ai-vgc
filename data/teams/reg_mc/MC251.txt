@@ -1,0 +1,53 @@
+Milotic @ Leftovers  
+Ability: Competitive  
+EVs: 32 HP / 28 Def / 5 SpD / 1 Spe  
+Calm Nature  
+- Muddy Water  
+- Coil  
+- Hypnosis  
+- Protect  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+EVs: 32 HP / 32 Atk / 1 SpD / 1 Spe  
+Adamant Nature  
+- Leech Life  
+- Sucker Punch  
+- Protect  
+- Swords Dance  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+EVs: 30 HP / 2 Def / 3 SpD / 31 Spe  
+Careful Nature  
+- Parting Shot  
+- Fake Out  
+- Snarl  
+- Flare Blitz  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 32 HP / 5 Atk / 7 Def / 18 SpD / 4 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- Fake Out  
+- U-turn  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+EVs: 2 HP / 32 SpA / 31 Spe  
+Modest Nature  
+- Dragon Pulse  
+- Power Gem  
+- Protect  
+- Flamethrower  
+
+Farigiraf @ Grassy Seed  
+Ability: Armor Tail  
+EVs: 31 HP / 11 Def / 1 SpA / 23 SpD  
+Calm Nature  
+- Psychic  
+- Trick Room  
+- Helping Hand  
+- Protect

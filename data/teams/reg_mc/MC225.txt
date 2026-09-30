@@ -1,0 +1,53 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+EVs: 15 Atk / 19 SpA / 32 Spe  
+Hasty Nature  
+- Tailwind  
+- Hyper Voice  
+- Double-Edge  
+- Protect  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+EVs: 22 HP / 19 Def / 10 SpA / 15 Spe  
+Modest Nature  
+- Hyper Beam  
+- Hyper Voice  
+- Quick Attack  
+- Detect  
+
+Kingambit @ Life Orb  
+Ability: Defiant  
+EVs: 24 HP / 25 Atk / 17 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Sucker Punch  
+- Protect  
+
+Charizard @ Charizardite Y  
+Ability: Blaze  
+EVs: 22 HP / 22 Def / 11 SpA / 11 Spe  
+Modest Nature  
+- Heat Wave  
+- Weather Ball  
+- Ancient Power  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 17 HP / 25 Atk / 4 Def / 7 SpD / 13 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+EVs: 21 HP / 10 Atk / 20 Def / 15 Spe  
+Adamant Nature  
+- Fake Out  
+- Close Combat  
+- Dire Claw  
+- Protect

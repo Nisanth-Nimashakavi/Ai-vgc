@@ -1,0 +1,59 @@
+Indeedee (M) @ Choice Scarf  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Expanding Force  
+- Trick  
+- Protect  
+- Gravity  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Gunk Shot  
+- Fake Out  
+- Close Combat  
+- Coaching  
+
+Corviknight @ Psychic Seed  
+Ability: Mirror Armor  
+Level: 50  
+EVs: 31 HP / 11 Atk / 1 Def / 15 SpD / 8 Spe  
+Careful Nature  
+- Bulk Up  
+- Power Trip  
+- Roost  
+- Brave Bird  
+
+Delphox @ Delphoxite  
+Ability: Blaze  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Heat Wave  
+- Expanding Force  
+- Protect  
+- Focus Blast  
+
+Excadrill @ Focus Sash  
+Ability: Mold Breaker  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Adamant Nature  
+- High Horsepower  
+- Iron Head  
+- Swords Dance  
+- Protect  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Adamant Nature  
+- Knock Off  
+- Rock Slide  
+- Low Kick  
+- Protect

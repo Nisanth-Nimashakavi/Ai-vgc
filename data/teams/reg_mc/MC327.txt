@@ -1,0 +1,59 @@
+Lucario @ Lucarionite Z  
+Ability: Inner Focus  
+Level: 50  
+EVs: 11 HP / 25 SpA / 30 Spe  
+Modest Nature  
+- Aura Sphere  
+- Dark Pulse  
+- Calm Mind  
+- Protect  
+
+Gengar @ Gengarite  
+Ability: Cursed Body  
+Level: 50  
+EVs: 32 HP / 6 Def / 8 SpD / 20 Spe  
+Modest Nature  
+- Shadow Ball  
+- Sludge Bomb  
+- Perish Song  
+- Protect  
+
+Incineroar @ Passho Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 31 HP / 15 Def / 20 SpD  
+Sassy Nature  
+- Flare Blitz  
+- Fake Out  
+- Parting Shot  
+- Protect  
+
+Rillaboom @ Eject Button  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 4 Def / 30 SpD  
+Sassy Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Protect  
+
+Politoed @ Sitrus Berry  
+Ability: Drizzle  
+Level: 50  
+EVs: 32 HP / 24 Def / 7 SpD / 3 Spe  
+Calm Nature  
+- Weather Ball  
+- Encore  
+- Perish Song  
+- Protect  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+Level: 50  
+EVs: 32 HP / 1 Def / 1 SpA / 31 SpD / 1 Spe  
+Bold Nature  
+- Electro Shot  
+- Dragon Pulse  
+- Flash Cannon  
+- Protect

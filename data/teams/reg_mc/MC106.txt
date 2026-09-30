@@ -1,0 +1,53 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+EVs: 2 Atk / 32 SpA / 32 Spe  
+Serious Nature  
+- Double-Edge  
+- Hyper Voice  
+- Tailwind  
+- Protect  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Dire Claw  
+- Close Combat  
+- Throat Chop  
+- Protect  
+
+Indeedee @ Choice Scarf  
+Ability: Psychic Surge  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Expanding Force  
+- Dazzling Gleam  
+- Trick  
+- Mystical Fire  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Knock Off  
+- Rock Slide  
+- Dragon Dance  
+- Protect  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Rock Slide  
+- Iron Head  
+- High Horsepower  
+- Protect  
+
+Milotic @ Sitrus Berry  
+Ability: Competitive  
+EVs: 32 HP / 11 Def / 10 SpA / 13 Spe  
+Modest Nature  
+- Scald  
+- Ice Beam  
+- Icy Wind  
+- Protect

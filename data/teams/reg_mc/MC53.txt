@@ -1,0 +1,59 @@
+Charizard @ Charizardite X  
+Ability: Blaze  
+Level: 50  
+EVs: 4 HP / 30 Atk / 32 Spe  
+Adamant Nature  
+- Dragon Dance  
+- Dragon Claw  
+- Protect  
+- Flare Blitz  
+
+Rillaboom @ Occa Berry  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 21 HP / 5 Atk / 1 Def / 32 SpD / 7 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Fake Out  
+- Stomping Tantrum  
+- Grassy Glide  
+
+Kingambit @ Focus Sash  
+Ability: Defiant  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Adamant Nature  
+- Sucker Punch  
+- Low Kick  
+- Kowtow Cleave  
+- Iron Head  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 4 HP / 8 Def / 32 SpA / 22 Spe  
+Timid Nature  
+- Moonblast  
+- Dazzling Gleam  
+- Light of Ruin  
+- Protect  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Dire Claw  
+- Fake Out  
+- Close Combat  
+- Protect  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 29 HP / 5 Atk / 16 Def / 16 SpD  
+Impish Nature  
+- Throat Chop  
+- Flare Blitz  
+- Fake Out  
+- Parting Shot

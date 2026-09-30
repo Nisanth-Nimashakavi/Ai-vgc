@@ -1,0 +1,59 @@
+Swampert @ Swampertite  
+Ability: Torrent  
+Level: 50  
+EVs: 11 HP / 30 Atk / 25 Spe  
+Adamant Nature  
+- Wave Crash  
+- Earthquake  
+- Ice Punch  
+- Protect  
+
+Pelipper @ Focus Sash  
+Ability: Drizzle  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Hurricane  
+- Weather Ball  
+- Protect  
+- Tailwind  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+Level: 50  
+EVs: 32 HP / 7 Def / 5 SpA / 13 SpD / 9 Spe  
+Modest Nature  
+- Flash Cannon  
+- Electro Shot  
+- Protect  
+- Dragon Pulse  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 22 HP / 8 Atk / 4 Def / 3 SpD / 29 Spe  
+Jolly Nature  
+- Fake Out  
+- Flare Blitz  
+- Parting Shot  
+- Darkest Lariat  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 32 Atk / 1 SpD / 1 Spe  
+Adamant Nature  
+- Sucker Punch  
+- Iron Head  
+- Leech Life  
+- Protect  
+
+Sinistcha @ Rocky Helmet  
+Ability: Hospitality  
+Level: 50  
+EVs: 32 HP / 19 Def / 14 SpD / 1 Spe  
+Bold Nature  
+- Matcha Gotcha  
+- Rage Powder  
+- Trick Room  
+- Scald

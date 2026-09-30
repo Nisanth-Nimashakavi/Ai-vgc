@@ -1,0 +1,59 @@
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 31 HP / 14 Def / 21 Spe  
+Timid Nature  
+- Light of Ruin  
+- Dazzling Gleam  
+- Calm Mind  
+- Protect  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 11 HP / 3 Def / 19 SpA / 3 SpD / 30 Spe  
+Modest Nature  
+- Draco Meteor  
+- Earth Power  
+- Flamethrower  
+- Protect  
+
+Rillaboom @ Life Orb  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 24 HP / 15 Atk / 14 SpD / 13 Spe  
+Adamant Nature  
+- Wood Hammer  
+- High Horsepower  
+- Fake Out  
+- Grassy Glide  
+
+Sneasler @ Focus Sash  
+Ability: Poison Touch  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+- Fake Out  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 30 HP / 1 Def / 12 SpD / 23 Spe  
+Careful Nature  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+- Fake Out  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 25 Atk / 8 SpD / 1 Spe  
+Adamant Nature  
+- Protect  
+- Iron Head  
+- Sucker Punch  
+- Kowtow Cleave

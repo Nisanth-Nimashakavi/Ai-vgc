@@ -1,0 +1,59 @@
+Farigiraf @ Colbur Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 25 HP / 26 Def / 15 SpD  
+Bold Nature  
+- Twin Beam  
+- Thunderbolt  
+- Trick Room  
+- Protect  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Sucker Punch  
+- Leech Life  
+- Aqua Jet  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 12 HP / 32 Atk / 4 SpD / 18 Spe  
+Jolly Nature  
+- Close Combat  
+- Dire Claw  
+- Fake Out  
+- Quick Guard  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 8 Atk / 11 Def / 12 SpD / 3 Spe  
+Careful Nature  
+- Fake Out  
+- Will-O-Wisp  
+- Throat Chop  
+- Parting Shot  
+
+Pelipper @ Sitrus Berry  
+Ability: Drizzle  
+Level: 50  
+EVs: 31 HP / 2 Def / 5 SpA / 16 SpD / 12 Spe  
+Modest Nature  
+- Wide Guard  
+- Tailwind  
+- Hurricane  
+- Weather Ball  
+
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 32 HP / 32 Atk / 1 SpD / 1 Spe  
+Adamant Nature  
+- Glaive Rush  
+- Icicle Crash  
+- Protect  
+- Ice Shard

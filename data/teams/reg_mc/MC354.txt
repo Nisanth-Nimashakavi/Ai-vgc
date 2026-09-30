@@ -1,0 +1,59 @@
+Floette-Mega (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 15 HP / 14 Def / 5 SpA / 32 Spe  
+Modest Nature  
+- Dazzling Gleam  
+- Draining Kiss  
+- Calm Mind  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 30 HP / 20 Def / 16 Spe  
+Impish Nature  
+- Flare Blitz  
+- Taunt  
+- Parting Shot  
+- Fake Out  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 7 HP / 27 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 14 HP / 20 Atk / 32 Spe  
+Adamant Nature  
+- Rock Tomb  
+- Protect  
+- Close Combat  
+- Dire Claw  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 26 HP / 15 Atk / 12 SpD / 13 Spe  
+Adamant Nature  
+- Wood Hammer  
+- High Horsepower  
+- Grassy Glide  
+- Fake Out  
+
+Dragonite @ Dragoninite  
+Ability: Inner Focus  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Dragon Pulse  
+- Heat Wave  
+- Tailwind  
+- Protect

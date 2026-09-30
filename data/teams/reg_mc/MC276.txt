@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Hyper Voice  
+- Tailwind  
+- Protect  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Milotic @ Sitrus Berry  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 19 Def / 10 SpA / 5 Spe  
+Modest Nature  
+- Scald  
+- Ice Beam  
+- Recover  
+- Icy Wind  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Adamant Nature  
+- Close Combat  
+- Rock Slide  
+- Dire Claw  
+- Protect  
+
+Indeedee (M) @ Twisted Spoon  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Expanding Force  
+- Helping Hand  
+- Mystical Fire  
+- Protect  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Adamant Nature  
+- Flare Blitz  
+- Head Smash  
+- Extreme Speed  
+- Protect

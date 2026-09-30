@@ -1,0 +1,47 @@
+Blastoise @ Blastoisinite  
+Ability: Rain Dish  
+Modest Nature  
+- Water Spout  
+- Terrain Pulse  
+- Shell Smash  
+- Protect  
+
+Hawlucha @ Hawluchanite  
+Ability: Limber  
+Jolly Nature  
+- Cross Chop  
+- Dual Wingbeat  
+- Entrainment  
+- Detect  
+
+Snorlax @ Leftovers  
+Ability: Thick Fat  
+Relaxed Nature  
+- Fissure  
+- Smack Down  
+- Stockpile  
+- Protect  
+
+Indeedee-F @ Rocky Helmet  
+Ability: Psychic Surge  
+Bold Nature  
+- Alluring Voice  
+- Follow Me  
+- Trick Room  
+- Heal Pulse  
+
+Rillaboom @ Occa Berry  
+Ability: Grassy Surge  
+Adamant Nature  
+- Grassy Glide  
+- Wood Hammer  
+- High Horsepower  
+- Fake Out  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Relaxed Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Assurance

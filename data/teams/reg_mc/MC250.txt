@@ -1,0 +1,53 @@
+Froslass @ Froslassite  
+Ability: Cursed Body  
+EVs: 32 HP / 19 Def / 15 Spe  
+Timid Nature  
+- Blizzard  
+- Aurora Veil  
+- Rain Dance  
+- Protect  
+
+Politoed @ Sitrus Berry  
+Ability: Drizzle  
+EVs: 32 HP / 24 Def / 7 SpD / 3 Spe  
+Calm Nature  
+- Weather Ball  
+- Perish Song  
+- Encore  
+- Protect  
+
+Incineroar @ Passho Berry  
+Ability: Intimidate  
+EVs: 31 HP / 15 Def / 20 SpD  
+Sassy Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Protect  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+EVs: 32 HP / 1 Def / 1 SpA / 32 SpD  
+Bold Nature  
+- Dragon Pulse  
+- Flash Cannon  
+- Electro Shot  
+- Protect  
+
+Gengar @ Gengarite  
+Ability: Cursed Body  
+EVs: 32 HP / 6 Def / 8 SpD / 20 Spe  
+Modest Nature  
+- Shadow Ball  
+- Perish Song  
+- Sludge Bomb  
+- Protect  
+
+Rillaboom @ Eject Button  
+Ability: Grassy Surge  
+EVs: 32 HP / 4 Def / 30 SpD  
+Sassy Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Protect

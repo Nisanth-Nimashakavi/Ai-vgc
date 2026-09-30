@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 18 HP / 25 Atk / 20 SpD / 3 Spe  
+Adamant Nature  
+- Fake Out  
+- U-turn  
+- Wood Hammer  
+- Grassy Glide  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 28 HP / 20 Def / 15 SpA / 3 Spe  
+Modest Nature  
+- Draining Kiss  
+- Dazzling Gleam  
+- Calm Mind  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 24 HP / 10 Def / 27 SpD / 5 Spe  
+Impish Nature  
+- Fake Out  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Modest Nature  
+- Shadow Ball  
+- Make It Rain  
+- Nasty Plot  
+- Protect  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Tailwind  
+- Hyper Voice  
+- Draco Meteor  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Fake Out  
+- Close Combat  
+- Rock Slide  
+- Dire Claw

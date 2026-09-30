@@ -1,0 +1,56 @@
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Shiny: Yes  
+EVs: 32 HP / 32 Atk / 2 SpD  
+brave Nature  
+- Liquidation  
+- Leech Life  
+- Swords Dance  
+- Close Combat  
+
+Sableye @ Light Clay  
+Ability: Prankster  
+EVs: 32 HP / 32 Def / 2 SpD  
+bold Nature  
+- Quash  
+- Reflect  
+- Light Screen  
+- Rain Dance  
+
+Charizard @ Charizardite X  
+Ability: Blaze  
+EVs: 32 HP / 17 Atk / 17 Spe  
+adamant Nature  
+- Belly Drum  
+- Breaking Swipe  
+- Flame Charge  
+- Protect  
+
+Sinistcha-Masterpiece @ Kasib Berry  
+Ability: Hospitality  
+Shiny: Yes  
+EVs: 32 HP / 32 Def / 2 SpA  
+relaxed Nature  
+- Matcha Gotcha  
+- Rage Powder  
+- Trick Room  
+- Protect  
+
+Gallade @ Focus Sash  
+Ability: Sharpness  
+Shiny: Yes  
+EVs: 2 HP / 32 Atk / 32 Spe  
+adamant Nature  
+- Wide Guard  
+- Sacred Sword  
+- Psycho Cut  
+- Poison Jab  
+
+Indeedee-F (F) @ Psychic Seed  
+Ability: Psychic Surge  
+EVs: 32 HP / 32 Def / 2 SpD  
+relaxed Nature  
+- Terrain Pulse  
+- Trick Room  
+- Imprison  
+- Follow Me

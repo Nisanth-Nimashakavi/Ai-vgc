@@ -1,0 +1,59 @@
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Glaive Rush  
+- Ice Shard  
+- Swords Dance  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 11 HP / 29 Atk / 26 Spe  
+Adamant Nature  
+- Grassy Glide  
+- Wood Hammer  
+- High Horsepower  
+- Fake Out  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 31 HP / 1 Atk / 20 Def / 14 SpD  
+Careful Nature  
+- Darkest Lariat  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+
+Milotic @ Rindo Berry  
+Ability: Competitive  
+Level: 50  
+EVs: 30 HP / 17 Def / 6 SpA / 13 Spe  
+Modest Nature  
+- Scald  
+- Ice Beam  
+- Life Dew  
+- Protect  
+
+Pawmot @ Focus Sash  
+Ability: Volt Absorb  
+Level: 50  
+EVs: 15 HP / 19 Atk / 32 Spe  
+Jolly Nature  
+- Close Combat  
+- Coaching  
+- Nuzzle  
+- Fake Out  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 32 SpA / 2 SpD / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Power Gem  
+- Protect

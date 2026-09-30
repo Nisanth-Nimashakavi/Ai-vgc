@@ -1,0 +1,59 @@
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Calm Nature  
+- Scald  
+- Ice Beam  
+- Protect  
+- Recover  
+
+Pelipper @ Focus Sash  
+Ability: Drizzle  
+Level: 50  
+EVs: 31 HP / 8 SpA / 25 SpD / 2 Spe  
+Bold Nature  
+- Weather Ball  
+- Hurricane  
+- Tailwind  
+- Wide Guard  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Adamant Nature  
+- Close Combat  
+- Rock Slide  
+- Dire Claw  
+- Fake Out  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 24 HP / 14 Atk / 3 Def / 24 SpD / 1 Spe  
+Careful Nature  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Adamant Nature  
+- Leech Life  
+- Aqua Jet  
+- Iron Head  
+- Protect  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 24 HP / 1 Def / 32 SpA / 7 SpD / 2 Spe  
+Timid Nature  
+- Power Gem  
+- Earth Power  
+- Dragon Pulse  
+- Protect

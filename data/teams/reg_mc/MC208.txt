@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 32 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Fire Blast  
+- Protect  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Fake Out  
+- Dire Claw  
+- Close Combat  
+- Throat Chop  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Low Kick  
+- Protect  
+
+Zoroark-Hisui @ Choice Scarf  
+Ability: Illusion  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Shadow Ball  
+- Flamethrower  
+- Psychic  
+- Trick  
+
+Volcarona @ Focus Sash  
+Ability: Flame Body  
+Level: 50  
+EVs: 32 HP / 25 Def / 9 SpD  
+Calm Nature  
+- Fiery Dance  
+- Struggle Bug  
+- Rage Powder  
+- Tailwind  
+
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Glaive Rush  
+- Ice Shard  
+- Brick Break  
+- Protect

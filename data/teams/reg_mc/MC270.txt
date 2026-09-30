@@ -1,0 +1,59 @@
+Overqwil @ Leftovers  
+Ability: Poison Point  
+Level: 50  
+EVs: 32 HP / 9 Def / 25 SpD  
+Careful Nature  
+- Barb Barrage  
+- Stockpile  
+- Protect  
+- Minimize  
+
+Lucario @ Lucarionite Z  
+Ability: Inner Focus  
+Level: 50  
+EVs: 32 HP / 2 SpA / 32 Spe  
+Timid Nature  
+- Aura Sphere  
+- Flash Cannon  
+- Protect  
+- Psych Up  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 13 Def / 20 SpD / 1 Spe  
+Careful Nature  
+- Fake Out  
+- Snarl  
+- Flare Blitz  
+- Parting Shot  
+
+Rillaboom @ Occa Berry  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 5 Atk / 21 SpD / 8 Spe  
+Adamant Nature  
+- Grassy Glide  
+- Fake Out  
+- Wood Hammer  
+- U-turn  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 20 HP / 12 Atk / 1 Def / 1 SpD / 32 Spe  
+Adamant Nature  
+- Protect  
+- Close Combat  
+- Dire Claw  
+- Rock Slide  
+
+Klefki @ Sitrus Berry  
+Ability: Prankster  
+Level: 50  
+EVs: 32 HP / 21 Def / 13 SpD  
+Calm Nature  
+- Draining Kiss  
+- Psych Up  
+- Substitute  
+- Calm Mind

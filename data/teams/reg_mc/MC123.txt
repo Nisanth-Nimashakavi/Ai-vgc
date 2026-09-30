@@ -1,0 +1,59 @@
+Aggron @ Life Orb  
+Ability: Rock Head  
+Level: 50  
+EVs: 18 Atk / 32 SpA / 16 Spe  
+Quiet Nature  
+- Blizzard  
+- Head Smash  
+- Protect  
+- Fire Blast  
+
+Klefki @ Focus Sash  
+Ability: Prankster  
+Level: 50  
+EVs: 32 HP / 1 Def / 32 SpA / 1 SpD  
+Modest Nature  
+- Dazzling Gleam  
+- Light Screen  
+- Rain Dance  
+- Trick Room  
+
+Chimecho @ Chimechite  
+Ability: Levitate  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Psychic  
+- Trick Room  
+- Gravity  
+- Energy Ball  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Def  
+Brave Nature  
+- Protect  
+- Leech Life  
+- Swords Dance  
+- Close Combat  
+
+Gholdengo @ Choice Scarf  
+Ability: Good as Gold  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Psychic  
+- Shadow Ball  
+- Power Gem  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 5 Atk / 9 Def / 20 SpD  
+Brave Nature  
+- Sucker Punch  
+- Protect  
+- Kowtow Cleave  
+- Iron Head

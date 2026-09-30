@@ -1,0 +1,59 @@
+Dragonite @ Dragoninite  
+Ability: Inner Focus  
+Level: 50  
+EVs: 32 HP / 32 SpA / 2 SpD  
+Modest Nature  
+- Tailwind  
+- Dragon Pulse  
+- Heat Wave  
+- Extreme Speed  
+
+Kingambit @ Life Orb  
+Ability: Defiant  
+Level: 50  
+EVs: 21 HP / 32 Atk / 2 Def / 11 SpD  
+Adamant Nature  
+- Iron Head  
+- Kowtow Cleave  
+- Sucker Punch  
+- Protect  
+
+Torkoal @ Charcoal  
+Ability: Drought  
+Level: 50  
+EVs: 32 HP / 32 SpA / 2 SpD  
+Quiet Nature  
+- Eruption  
+- Heat Wave  
+- Earth Power  
+- Protect  
+
+Armarouge @ Leftovers  
+Ability: Flash Fire  
+Level: 50  
+EVs: 32 HP / 11 Def / 20 SpA / 3 SpD  
+Modest Nature  
+- Psychic  
+- Heat Wave  
+- Calm Mind  
+- Trick Room  
+
+Maushold-Four @ Wide Lens  
+Ability: Technician  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Jolly Nature  
+- Population Bomb  
+- Bite  
+- Follow Me  
+- Protect  
+
+Annihilape @ Choice Scarf  
+Ability: Defiant  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Shadow Claw  
+- Close Combat  
+- Seed Bomb  
+- Ice Punch

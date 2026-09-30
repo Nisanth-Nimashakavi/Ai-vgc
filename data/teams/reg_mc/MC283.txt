@@ -1,0 +1,59 @@
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+Level: 50  
+EVs: 18 HP / 25 Def / 23 Spe  
+Timid Nature  
+- Protect  
+- Fake Out  
+- Zap Cannon  
+- Focus Blast  
+
+Baxcalibur @ Life Orb  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 23 HP / 25 Atk / 1 SpD / 17 Spe  
+Adamant Nature  
+- Protect  
+- Icicle Crash  
+- Ice Shard  
+- Glaive Rush  
+
+Incineroar @ Chople Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 14 Def / 20 SpD  
+Careful Nature  
+- Fake Out  
+- Flare Blitz  
+- Darkest Lariat  
+- Parting Shot  
+
+Gholdengo @ Choice Scarf  
+Ability: Good as Gold  
+Level: 50  
+EVs: 7 HP / 27 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Power Gem  
+- Trick  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 15 Atk / 19 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 4 HP / 8 Def / 32 SpA / 22 Spe  
+Timid Nature  
+- Protect  
+- Moonblast  
+- Dazzling Gleam  
+- Light of Ruin

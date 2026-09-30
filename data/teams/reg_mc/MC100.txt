@@ -1,0 +1,53 @@
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Adamant Nature  
+- Leech Life  
+- Iron Head  
+- Close Combat  
+- Protect  
+
+Swampert @ Swampertite  
+Ability: Damp  
+EVs: 11 HP / 32 Atk / 23 Spe  
+Adamant Nature  
+- Wave Crash  
+- Earthquake  
+- Ice Punch  
+- Protect  
+
+Grimmsnarl @ Light Clay  
+Ability: Prankster  
+EVs: 32 HP / 19 Def / 15 SpD  
+Calm Nature  
+- Foul Play  
+- Parting Shot  
+- Reflect  
+- Light Screen  
+
+Pelipper @ Focus Sash  
+Ability: Drizzle  
+EVs: 32 SpA / 32 Spe  
+Timid Nature  
+- Hurricane  
+- Weather Ball  
+- Tailwind  
+- Wide Guard  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+EVs: 32 HP / 6 SpA / 25 SpD / 3 Spe  
+Modest Nature  
+- Electro Shot  
+- Dragon Pulse  
+- Flash Cannon  
+- Protect  
+
+Sinistcha @ Sitrus Berry  
+Ability: Hospitality  
+EVs: 32 HP / 13 Def / 21 SpD  
+Relaxed Nature  
+- Matcha Gotcha  
+- Rage Powder  
+- Trick Room  
+- Protect

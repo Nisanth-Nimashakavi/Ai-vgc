@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Hyper Voice  
+- Dragon Pulse  
+- Tailwind  
+
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+Level: 50  
+EVs: 31 HP / 12 Def / 23 Spe  
+Timid Nature  
+- Protect  
+- Fake Out  
+- Zap Cannon  
+- Focus Blast  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 32 HP / 5 Def / 2 SpD / 27 Spe  
+Modest Nature  
+- Protect  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 14 Def / 20 SpD  
+Sassy Nature  
+- Fake Out  
+- Flare Blitz  
+- Darkest Lariat  
+- Parting Shot  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 12 HP / 10 Atk / 12 Def / 2 SpD / 30 Spe  
+Adamant Nature  
+- Protect  
+- Close Combat  
+- Poison Jab  
+- Rock Slide  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 27 HP / 15 Atk / 3 Def / 20 SpD / 1 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower

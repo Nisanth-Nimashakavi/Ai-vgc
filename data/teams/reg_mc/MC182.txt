@@ -1,0 +1,59 @@
+Zoroark-Hisui @ Focus Sash  
+Ability: Illusion  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Bitter Malice  
+- Icy Wind  
+- Fake Tears  
+- Memento  
+
+Staraptor @ Staraptite  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 6 SpD / 28 Spe  
+Jolly Nature  
+- Brave Bird  
+- Close Combat  
+- Roost  
+- Protect  
+
+Whimsicott @ Occa Berry  
+Ability: Prankster  
+Level: 50  
+EVs: 30 HP / 1 Def / 25 SpD / 10 Spe  
+Calm Nature  
+- Moonblast  
+- Tailwind  
+- Charm  
+- Light Screen  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Power Gem  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Impish Nature  
+- Throat Chop  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Symbiosis  
+Level: 50  
+EVs: 32 HP / 16 Def / 5 SpA / 13 Spe  
+Modest Nature  
+- Light of Ruin  
+- Moonblast  
+- Dazzling Gleam  
+- Protect

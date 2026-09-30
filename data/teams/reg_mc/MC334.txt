@@ -1,0 +1,59 @@
+Rillaboom @ Occa Berry  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 31 HP / 5 Atk / 24 SpD / 6 Spe  
+Adamant Nature  
+- Wood Hammer  
+- High Horsepower  
+- Grassy Glide  
+- Fake Out  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 Def / 32 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Flamethrower  
+- Protect  
+- Tailwind  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Protect  
+- Nasty Plot  
+
+Milotic @ Sitrus Berry  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 19 Def / 10 SpA / 5 Spe  
+Modest Nature  
+- Scald  
+- Ice Beam  
+- Recover  
+- Protect  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 17 HP / 17 Atk / 32 Spe  
+Adamant Nature  
+- Knock Off  
+- Rock Slide  
+- Protect  
+- Low Kick  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Iron Head  
+- High Horsepower  
+- Protect  
+- Rock Slide

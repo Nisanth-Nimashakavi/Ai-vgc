@@ -1,0 +1,53 @@
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+EVs: 32 HP / 25 Atk / 3 SpD / 6 Spe  
+Adamant Nature  
+- Icicle Crash  
+- Glaive Rush  
+- Ice Shard  
+- Protect  
+
+Staraptor @ Staraptite  
+Ability: Intimidate  
+EVs: 29 HP / 1 Atk / 4 SpD / 32 Spe  
+Jolly Nature  
+- Close Combat  
+- Brave Bird  
+- Roost  
+- Protect  
+
+Volcarona @ Grassy Seed  
+Ability: Flame Body  
+EVs: 22 HP / 21 Def / 23 Spe  
+Timid Nature  
+- Quiver Dance  
+- Heat Wave  
+- Giga Drain  
+- Protect  
+
+Rillaboom @ Occa Berry  
+Ability: Grassy Surge  
+EVs: 32 HP / 5 Atk / 21 SpD / 8 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+
+Basculegion @ Life Orb  
+Ability: Adaptability  
+EVs: 4 HP / 28 Atk / 2 Def / 32 Spe  
+Adamant Nature  
+- Protect  
+- Wave Crash  
+- Last Respects  
+- Aqua Jet  
+
+Whimsicott @ Focus Sash  
+Ability: Prankster  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Tailwind  
+- Moonblast  
+- Encore  
+- Tickle

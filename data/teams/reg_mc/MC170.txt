@@ -1,0 +1,59 @@
+Glimmora @ Focus Sash  
+Ability: Toxic Debris  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Power Gem  
+- Sludge Bomb  
+- Earth Power  
+- Spiky Shield  
+
+Whimsicott @ Coba Berry  
+Ability: Prankster  
+Level: 50  
+EVs: 30 HP / 17 Def / 19 Spe  
+Timid Nature  
+- Moonblast  
+- Tailwind  
+- Encore  
+- Protect  
+
+Volcarona @ Rocky Helmet  
+Ability: Flame Body  
+Level: 50  
+EVs: 32 HP / 32 Def / 1 SpD / 1 Spe  
+Bold Nature  
+- Heat Wave  
+- Struggle Bug  
+- Rage Powder  
+- Protect  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 8 HP / 1 Def / 32 SpA / 25 Spe  
+Modest Nature  
+- Draco Meteor  
+- Flamethrower  
+- Power Gem  
+- Protect  
+
+Basculegion (M) @ Life Orb  
+Ability: Adaptability  
+Level: 50  
+EVs: 4 HP / 23 Atk / 13 Def / 26 Spe  
+Adamant Nature  
+- Wave Crash  
+- Last Respects  
+- Aqua Jet  
+- Protect  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 31 HP / 16 Atk / 2 Def / 16 SpD / 1 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Sucker Punch  
+- Low Kick

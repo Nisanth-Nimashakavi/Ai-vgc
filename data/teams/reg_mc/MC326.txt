@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 1 Def / 32 SpA / 32 Spe  
+Timid Nature  
+- Hyper Voice  
+- Double-Edge  
+- Draco Meteor  
+- Protect  
+
+Kingambit @ Black Glasses  
+Ability: Defiant  
+Level: 50  
+EVs: 20 HP / 31 Atk / 15 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Sucker Punch  
+- Iron Head  
+- Protect  
+
+Aerodactyl @ Focus Sash  
+Ability: Unnerve  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Rock Slide  
+- Tailwind  
+- Taunt  
+- Protect  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+Level: 50  
+EVs: 1 HP / 18 Def / 32 SpA / 15 Spe  
+Modest Nature  
+- Hyper Voice  
+- Hyper Beam  
+- Quick Attack  
+- Detect  
+
+Blaziken @ Expert Belt  
+Ability: Speed Boost  
+Level: 50  
+EVs: 16 HP / 32 Atk / 18 Spe  
+Adamant Nature  
+- Flare Blitz  
+- Close Combat  
+- Thunder Punch  
+- Detect  
+
+Rillaboom @ Life Orb  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 26 HP / 31 Atk / 9 Spe  
+Adamant Nature  
+- Grassy Glide  
+- Wood Hammer  
+- High Horsepower  
+- Fake Out

@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 13 HP / 6 Atk / 31 SpD / 16 Spe  
+Adamant Nature  
+- Body Slam  
+- Dragon Dance  
+- Roost  
+- Protect  
+
+Mimikyu @ Mental Herb  
+Ability: Disguise  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Shadow Claw  
+- Play Rough  
+- Trick Room  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 20 Def / 14 SpD  
+Impish Nature  
+- Flare Blitz  
+- Throat Chop  
+- Fake Out  
+- Parting Shot  
+
+Gholdengo @ White Herb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 7 HP / 27 SpA / 32 Spe  
+Modest Nature  
+- Shadow Ball  
+- Make It Rain  
+- Thunderbolt  
+- Protect  
+
+Mudsdale @ Life Orb  
+Ability: Inner Focus  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- High Horsepower  
+- Rock Slide  
+- Heavy Slam  
+- Protect  
+
+Abomasnow @ Abomasite  
+Ability: Snow Warning  
+Level: 50  
+EVs: 32 HP / 1 Def / 32 SpA / 1 SpD  
+Quiet Nature  
+- Blizzard  
+- Energy Ball  
+- Earth Power  
+- Ice Shard

@@ -1,0 +1,59 @@
+Armarouge @ Focus Sash  
+Ability: Weak Armor  
+Level: 50  
+EVs: 1 HP / 1 Def / 32 SpA / 32 Spe  
+Modest Nature  
+- Expanding Force  
+- Protect  
+- Aura Sphere  
+- Armor Cannon  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Jolly Nature  
+- Dire Claw  
+- Protect  
+- Rock Slide  
+- Close Combat  
+
+Indeedee-F (F) @ Psychic Seed  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Psychic  
+- Protect  
+- Helping Hand  
+- Follow Me  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 1 Atk / 32 SpA / 32 Spe  
+Hasty Nature  
+- Hyper Voice  
+- Protect  
+- Tailwind  
+- Double-Edge  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 18 Atk / 1 Def / 15 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Low Kick  
+- Sucker Punch  
+- Iron Head  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 4 HP / 14 Def / 26 SpA / 22 Spe  
+Timid Nature  
+- Moonblast  
+- Protect  
+- Dazzling Gleam  
+- Light of Ruin

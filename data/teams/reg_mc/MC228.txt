@@ -1,0 +1,59 @@
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Bulk Up  
+- Leech Life  
+- Liquidation  
+- Iron Head  
+
+Arcanine-Hisui @ Charcoal  
+Ability: Intimidate  
+Level: 50  
+EVs: 14 HP / 32 Atk / 20 SpD  
+Brave Nature  
+- Close Combat  
+- Flare Blitz  
+- Rock Slide  
+- Protect  
+
+Farigiraf @ Sitrus Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Trick Room  
+- Psychic Noise  
+- Hyper Voice  
+- Protect  
+
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 25 HP / 32 Def / 9 SpA  
+Quiet Nature  
+- Muddy Water  
+- Ice Beam  
+- Protect  
+- Scald  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- High Horsepower  
+- Fake Out  
+- Grassy Glide  
+- Wood Hammer  
+
+Floette-Eternal (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Draining Kiss  
+- Dazzling Gleam  
+- Calm Mind  
+- Protect

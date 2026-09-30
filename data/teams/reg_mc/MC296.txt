@@ -1,0 +1,54 @@
+Salamence-Mega (M) @ Salamencite  
+Ability: Intimidate  
+EVs: 9 HP / 2 Def / 20 SpA / 3 SpD / 32 Spe  
+Timid Nature  
+- Protect  
+- Tailwind  
+- Hyper Voice  
+- Draco Meteor  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+EVs: 27 HP / 5 Def / 7 SpA / 9 SpD / 18 Spe  
+Modest Nature  
+- Protect  
+- Nasty Plot  
+- Shadow Ball  
+- Make It Rain  
+
+Incineroar (M) @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 29 HP / 5 Atk / 10 Def / 20 SpD / 2 Spe  
+Adamant Nature  
+- Fake Out  
+- Parting Shot  
+- Flare Blitz  
+- Darkest Lariat  
+
+Rillaboom (M) @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 4 HP / 25 Atk / 2 Def / 10 SpD / 25 Spe  
+Adamant Nature  
+- Fake Out  
+- U-turn  
+- Grassy Glide  
+- Wood Hammer  
+
+Basculegion @ Choice Scarf  
+Ability: Adaptability  
+EVs: 4 HP / 20 Atk / 5 Def / 5 SpD / 32 Spe  
+Jolly Nature  
+- Soak  
+- Wave Crash  
+- Last Respects  
+- Aqua Jet  
+
+Floette-Mega (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 21 HP / 3 Def / 8 SpA / 2 SpD / 32 Spe  
+Timid Nature  
+- Protect  
+- Calm Mind  
+- Draining Kiss  
+- Moonblast

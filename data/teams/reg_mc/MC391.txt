@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 26 HP / 15 Atk / 6 SpD / 19 Spe  
+Adamant Nature  
+- Fake Out  
+- Grassy Glide  
+- Wood Hammer  
+- High Horsepower  
+
+Lucario @ Lucarionite Z  
+Ability: Inner Focus  
+Level: 50  
+EVs: 32 HP / 2 Def / 7 SpA / 8 SpD / 17 Spe  
+Timid Nature  
+- Detect  
+- Aura Sphere  
+- Flash Cannon  
+- Calm Mind  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Protect  
+- Draco Meteor  
+- Power Gem  
+- Flamethrower  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 18 Def / 10 SpD / 6 Spe  
+Careful Nature  
+- Fake Out  
+- Parting Shot  
+- Flare Blitz  
+- Helping Hand  
+
+Basculegion (M) @ Life Orb  
+Ability: Adaptability  
+Level: 50  
+EVs: 28 Atk / 8 Def / 30 Spe  
+Adamant Nature  
+- Protect  
+- Wave Crash  
+- Aqua Jet  
+- Last Respects  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 4 Def / 30 Spe  
+Adamant Nature  
+- Protect  
+- Rock Tomb  
+- Close Combat  
+- Dire Claw

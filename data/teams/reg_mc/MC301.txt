@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 5 Atk / 19 SpD / 10 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+
+Sylveon @ Fairy Feather  
+Ability: Pixilate  
+Level: 50  
+EVs: 32 HP / 13 Def / 20 SpA / 1 Spe  
+Modest Nature  
+- Hyper Voice  
+- Quick Attack  
+- Hyper Beam  
+- Protect  
+
+Charizard @ Charizardite Y  
+Ability: Blaze  
+Level: 50  
+EVs: 32 HP / 12 Def / 1 SpA / 21 Spe  
+Modest Nature  
+- Heat Wave  
+- Weather Ball  
+- Ancient Power  
+- Protect  
+
+Incineroar @ Rocky Helmet  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 10 Def / 22 SpD / 2 Spe  
+Impish Nature  
+- Flare Blitz  
+- Parting Shot  
+- Fake Out  
+- Throat Chop  
+
+Farigiraf @ Sitrus Berry  
+Ability: Armor Tail  
+Level: 50  
+EVs: 27 HP / 20 Def / 19 SpD  
+Bold Nature  
+- Psychic  
+- Thunderbolt  
+- Trick Room  
+- Protect  
+
+Garchomp @ Choice Scarf  
+Ability: Rough Skin  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Rock Tomb  
+- Dragon Claw  
+- Rock Slide  
+- Stomping Tantrum

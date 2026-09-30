@@ -1,0 +1,65 @@
+Gengar @ Gengarite  
+Ability: Cursed Body  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 2 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Perish Song  
+- Disable  
+- Shadow Ball  
+
+WWE CAT (Incineroar) @ Passho Berry  
+Ability: Intimidate  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 20 Def / 14 SpD  
+Careful Nature  
+- Fake Out  
+- Protect  
+- Parting Shot  
+- Darkest Lariat  
+
+Altaria (M) @ Leftovers  
+Ability: Cloud Nine  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 20 Def / 14 SpD  
+Bold Nature  
+- Protect  
+- Perish Song  
+- Will-O-Wisp  
+- Fire Spin  
+
+Rillaboom @ Eject Button  
+Ability: Grassy Surge  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 32 Def / 2 Spe  
+Impish Nature  
+- Fake Out  
+- Protect  
+- U-turn  
+- Grassy Glide  
+
+Toxapex @ Sitrus Berry  
+Ability: Regenerator  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 18 Def / 16 SpD  
+Bold Nature  
+- Baneful Bunker  
+- Toxic  
+- Infestation  
+- Wide Guard  
+
+Sableye @ Roseli Berry  
+Ability: Prankster  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 13 Def / 21 SpD  
+Calm Nature  
+- Fake Out  
+- Will-O-Wisp  
+- Reflect  
+- Encore

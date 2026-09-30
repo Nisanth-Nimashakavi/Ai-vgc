@@ -1,0 +1,59 @@
+Metagross @ Metagrossite  
+Ability: Clear Body  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Steel Roller  
+- Psychic Fangs  
+- Ice Punch  
+- Protect  
+
+Blaziken @ Focus Sash  
+Ability: Speed Boost  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Heat Wave  
+- Aura Sphere  
+- Coaching  
+- Detect  
+
+Indeedee-F (F) @ Psychic Seed  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Psychic  
+- Helping Hand  
+- Follow Me  
+- Trick Room  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 18 HP / 25 Atk / 16 Def / 7 SpD  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- U-turn  
+
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+Level: 50  
+EVs: 30 HP / 10 Def / 26 Spe  
+Timid Nature  
+- Zap Cannon  
+- Focus Blast  
+- Encore  
+- Protect  
+
+Dragonite @ Life Orb  
+Ability: Inner Focus  
+Level: 50  
+EVs: 31 HP / 32 Atk / 3 Spe  
+Adamant Nature  
+- Dragon Claw  
+- Low Kick  
+- Extreme Speed  
+- Protect

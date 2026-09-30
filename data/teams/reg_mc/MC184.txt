@@ -1,0 +1,59 @@
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 24 HP / 32 Atk / 10 SpD  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower  
+- Fake Out  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Hyper Voice  
+- Draco Meteor  
+- Flamethrower  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Adamant Nature  
+- Protect  
+- High Horsepower  
+- Iron Head  
+- Rock Slide  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 18 HP / 16 Atk / 32 Spe  
+Adamant Nature  
+- Protect  
+- Rock Slide  
+- Knock Off  
+- Low Kick  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 23 HP / 32 Atk / 10 Def / 1 Spe  
+Adamant Nature  
+- Close Combat  
+- Rock Slide  
+- Dire Claw  
+- Fake Out  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Modest Nature  
+- Protect  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot

@@ -1,0 +1,59 @@
+Swampert @ Swampertite  
+Ability: Damp  
+Level: 50  
+EVs: 14 HP / 30 Atk / 22 Spe  
+Adamant Nature  
+- Wave Crash  
+- Ice Punch  
+- Earthquake  
+- Protect  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+Level: 50  
+EVs: 32 HP / 1 SpA / 29 SpD / 4 Spe  
+Modest Nature  
+- Electro Shot  
+- Dragon Pulse  
+- Flash Cannon  
+- Protect  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 16 HP / 32 Atk / 9 SpD / 9 Spe  
+Adamant Nature  
+- Iron Head  
+- Leech Life  
+- Close Combat  
+- Protect  
+
+Pelipper @ Focus Sash  
+Ability: Drizzle  
+Level: 50  
+EVs: 2 HP / 1 Def / 30 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Tailwind  
+- Weather Ball  
+- Hurricane  
+- Protect  
+
+Grimmsnarl (M) @ Light Clay  
+Ability: Prankster  
+Level: 50  
+EVs: 32 HP / 20 Def / 14 SpD  
+Calm Nature  
+- Parting Shot  
+- Spirit Break  
+- Reflect  
+- Light Screen  
+
+Sinistcha @ Sitrus Berry  
+Ability: Hospitality  
+Level: 50  
+EVs: 32 HP / 4 Def / 30 SpD  
+Relaxed Nature  
+- Matcha Gotcha  
+- Rage Powder  
+- Trick Room  
+- Protect

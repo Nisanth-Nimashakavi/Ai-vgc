@@ -1,0 +1,59 @@
+Gardevoir @ Gardevoirite  
+Ability: Trace  
+Level: 50  
+EVs: 32 HP / 9 Def / 25 SpA  
+Modest Nature  
+- Hyper Voice  
+- Expanding Force  
+- Trick Room  
+- Protect  
+
+Indeedee-F (F) @ Wide Lens  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Trick Room  
+- Follow Me  
+- Helping Hand  
+- Sing  
+
+Sneasler @ Focus Sash  
+Ability: Poison Touch  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Fake Out  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+
+Torkoal @ Charcoal  
+Ability: Drought  
+Level: 50  
+EVs: 32 HP / 1 Def / 32 SpA / 1 SpD  
+Quiet Nature  
+- Eruption  
+- Helping Hand  
+- Weather Ball  
+- Protect  
+
+Typhlosion-Hisui @ Choice Scarf  
+Ability: Frisk  
+Level: 50  
+EVs: 1 HP / 1 Def / 32 SpA / 32 Spe  
+Timid Nature  
+- Eruption  
+- Heat Wave  
+- Shadow Ball  
+- Overheat  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpA / 32 Spe  
+Naive Nature  
+- Double-Edge  
+- Tailwind  
+- Hyper Voice  
+- Protect

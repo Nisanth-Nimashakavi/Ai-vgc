@@ -1,0 +1,65 @@
+Flapjack (Incineroar) (M) @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 32 Atk / 2 Spe  
+Brave Nature  
+- Fake Out  
+- Flare Blitz  
+- Assurance  
+- Parting Shot  
+
+Cherry (Farigiraf) (F) @ Life Orb  
+Ability: Armor Tail  
+Level: 50  
+Shiny: Yes  
+EVs: 29 HP / 16 Def / 10 SpA / 11 SpD  
+Quiet Nature  
+- Protect  
+- Hyper Voice  
+- Psychic  
+- Trick Room  
+
+Chompers (Mawile) (F) @ Mawilite  
+Ability: Hyper Cutter  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Protect  
+- Iron Head  
+- Play Rough  
+- Sucker Punch  
+
+Sabrina (Primarina) (F) @ Leftovers  
+Ability: Liquid Voice  
+Level: 50  
+Shiny: Yes  
+EVs: 27 HP / 28 Def / 4 SpA / 7 Spe  
+Modest Nature  
+- Protect  
+- Calm Mind  
+- Hyper Voice  
+- Moonblast  
+
+Khione (Froslass) @ Froslassite  
+Ability: Snow Cloak  
+Level: 50  
+Shiny: Yes  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Aurora Veil  
+- Blizzard  
+- Shadow Ball  
+
+Paddles (Pawmot) @ Focus Sash  
+Ability: Iron Fist  
+Level: 50  
+Shiny: Yes  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Protect  
+- Fake Out  
+- Double Shock  
+- Close Combat

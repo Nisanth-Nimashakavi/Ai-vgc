@@ -1,0 +1,23 @@
+[project]
+name = "ai-vgc"
+version = "0.1.0"
+description = "A Pokémon VGC doubles bot for Showdown: imitation + self-play RL policy with one-turn search"
+authors = [
+    { name = "nimnim111", email = "nimjnimj3@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.3",
+    "poke-env",
+]
+
+[project.optional-dependencies]
+# The neural network (src/ai_vgc/nn). On the GPU server: `uv sync --extra nn`.
+nn = ["torch>=2.5", "tensorboard>=2.18", "scipy>=1.14"]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+poke-env = { git = "https://github.com/cameronangliss/poke-env.git", rev = "vgc-bench" }

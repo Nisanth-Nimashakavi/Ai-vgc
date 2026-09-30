@@ -1,0 +1,53 @@
+Lucario @ Lucarionite Z  
+Ability: Inner Focus  
+EVs: 17 HP / 32 Def / 17 Spe  
+Timid Nature  
+- Aura Sphere  
+- Calm Mind  
+- Flash Cannon  
+- Protect  
+
+Aerodactyl @ Aerodactylite  
+Ability: Unnerve  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Rock Slide  
+- Tailwind  
+- Dual Wingbeat  
+- Wide Guard  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 31 HP / 21 Def / 7 SpD / 7 Spe  
+Impish Nature  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+- Fake Out  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 17 HP / 32 Atk / 9 SpD / 8 Spe  
+Adamant Nature  
+- Grassy Glide  
+- U-turn  
+- Fake Out  
+- Wood Hammer  
+
+Primarina @ Leftovers  
+Ability: Liquid Voice  
+EVs: 28 HP / 1 Def / 14 SpA / 23 Spe  
+Modest Nature  
+- Hyper Voice  
+- Moonblast  
+- Calm Mind  
+- Protect  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+EVs: 32 HP / 10 Atk / 7 Def / 17 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Swords Dance  
+- Protect

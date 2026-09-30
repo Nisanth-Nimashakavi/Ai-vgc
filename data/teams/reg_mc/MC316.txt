@@ -1,0 +1,59 @@
+Indeedee-F (F) @ Psychic Seed  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 25 Def / 9 SpD  
+Bold Nature  
+- Trick Room  
+- Helping Hand  
+- Psychic  
+- Follow Me  
+
+Alakazam @ Alakazite  
+Ability: Magic Guard  
+Level: 50  
+EVs: 32 SpA / 3 SpD / 31 Spe  
+Modest Nature  
+- Protect  
+- Encore  
+- Expanding Force  
+- Focus Blast  
+
+Ninetales-Alola @ Choice Scarf  
+Ability: Snow Warning  
+Level: 50  
+EVs: 1 HP / 32 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Blizzard  
+- Freeze-Dry  
+- Psyshock  
+- Aurora Veil  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+- Protect  
+
+Kingambit @ Focus Sash  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 32 Atk / 1 Def / 1 SpD  
+Adamant Nature  
+- Sucker Punch  
+- Kowtow Cleave  
+- Iron Head  
+- Protect  
+
+Charizard @ Charizardite Y  
+Ability: Blaze  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Heat Wave  
+- Solar Beam  
+- Weather Ball

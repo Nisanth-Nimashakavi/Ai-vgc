@@ -1,0 +1,59 @@
+Indeedee-F (F) @ Psychic Seed  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Terrain Pulse  
+- Follow Me  
+- Helping Hand  
+- Trick Room  
+
+Armarouge @ Life Orb  
+Ability: Flash Fire  
+Level: 50  
+EVs: 9 HP / 32 SpA / 25 Spe  
+Modest Nature  
+- Heat Wave  
+- Expanding Force  
+- Dark Pulse  
+- Protect  
+
+Kingambit @ Focus Sash  
+Ability: Defiant  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Low Kick  
+- Sucker Punch  
+
+Torkoal @ Charcoal  
+Ability: Drought  
+Level: 50  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Eruption  
+- Weather Ball  
+- Earth Power  
+- Protect  
+
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Tailwind  
+- Protect  
+
+Metagross @ Metagrossite  
+Ability: Clear Body  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Iron Head  
+- Psychic Fangs  
+- Body Press  
+- Protect

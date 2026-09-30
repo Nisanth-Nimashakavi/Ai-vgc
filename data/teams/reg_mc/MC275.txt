@@ -1,0 +1,59 @@
+Metagross @ Metagrossite  
+Ability: Clear Body  
+Level: 50  
+EVs: 20 HP / 5 Atk / 9 Def / 32 Spe  
+Adamant Nature  
+- Steel Roller  
+- Psychic Fangs  
+- Body Press  
+- Protect  
+
+Garchomp @ Garchompite Z  
+Ability: Rough Skin  
+Level: 50  
+EVs: 8 HP / 7 Def / 21 SpA / 30 Spe  
+Modest Nature  
+- Draco Meteor  
+- Power Gem  
+- Flamethrower  
+- Protect  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Flare Blitz  
+- Head Smash  
+- Extreme Speed  
+- Protect  
+
+Milotic @ Sitrus Berry  
+Ability: Competitive  
+Level: 50  
+EVs: 29 HP / 15 Def / 10 SpA / 12 Spe  
+Modest Nature  
+- Scald  
+- Ice Beam  
+- Icy Wind  
+- Protect  
+
+Indeedee (M) @ Choice Scarf  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Expanding Force  
+- Tri Attack  
+- Mystical Fire  
+- Trick  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Rock Slide  
+- Protect

@@ -1,0 +1,55 @@
+Aang (Staraptor) @ Staraptite  
+Ability: Intimidate  
+EVs: 25 HP / 9 Atk / 32 Spe  
+Jolly Nature  
+- Brave Bird  
+- Close Combat  
+- Tailwind  
+- Protect  
+
+Ryuji (Raichu) @ Raichunite Y  
+Ability: Lightning Rod  
+EVs: 32 HP / 4 Def / 30 Spe  
+Timid Nature  
+- Zap Cannon  
+- Focus Blast  
+- Fake Out  
+- Protect  
+
+Parlayprince (Gholdengo) @ Life Orb  
+Ability: Good as Gold  
+EVs: 17 HP / 17 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Appa (Arcanine-Hisui) @ Focus Sash  
+Ability: Rock Head  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Jolly Nature  
+- Head Smash  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+
+Nico robin (Sylveon) @ Fairy Feather  
+Ability: Pixilate  
+Shiny: Yes  
+EVs: 21 HP / 2 Def / 20 SpA / 23 Spe  
+Modest Nature  
+- Hyper Voice  
+- Hyper Beam  
+- Quick Attack  
+- Detect  
+
+Flower man (Rillaboom) @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 15 Atk / 2 Def / 10 SpD / 7 Spe  
+Adamant Nature  
+- Grassy Glide  
+- Wood Hammer  
+- Fake Out  
+- High Horsepower

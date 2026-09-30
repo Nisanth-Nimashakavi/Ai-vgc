@@ -1,0 +1,61 @@
+Gorythmic (Rillaboom) (M) @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 27 HP / 15 Atk / 5 Def / 10 SpD / 9 Spe  
+Adamant Nature  
+- Wood Hammer  
+- Grassy Glide  
+- Fake Out  
+- U-turn  
+
+Cheap Trick (Sneasler) (M) @ Grassy Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Protect  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+
+King Crimson (Incineroar) (M) @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 14 Def / 20 SpD  
+Calm Nature  
+- Flare Blitz  
+- Darkest Lariat  
+- Fake Out  
+- Parting Shot  
+
+Guns N Roses (Floette-Mega) (F) @ Floettite  
+Ability: Fairy Aura  
+Level: 50  
+EVs: 27 HP / 15 Def / 5 SpA / 19 Spe  
+Modest Nature  
+- Protect  
+- Dazzling Gleam  
+- Draining Kiss  
+- Calm Mind  
+
+Baja Blast (Blastoise-Mega) (M) @ Blastoisinite  
+Ability: Mega Launcher  
+Level: 50  
+EVs: 22 HP / 25 SpA / 19 Spe  
+Modest Nature  
+- Protect  
+- Water Spout  
+- Terrain Pulse  
+- Shell Smash  
+
+Outdoodoo (Indeedee-F) @ Rocky Helmet  
+Ability: Psychic Surge  
+Level: 50  
+Shiny: Yes  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Follow Me  
+- Psychic  
+- Helping Hand  
+- Trick Room

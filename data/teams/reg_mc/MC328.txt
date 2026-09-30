@@ -1,0 +1,59 @@
+Absol @ Absolite Z  
+Ability: Pressure  
+Level: 50  
+EVs: 11 HP / 19 Atk / 4 Def / 32 Spe  
+Jolly Nature  
+- Night Slash  
+- Will-O-Wisp  
+- Close Combat  
+- Protect  
+
+Glimmora @ Focus Sash  
+Ability: Toxic Debris  
+Level: 50  
+EVs: 1 Def / 32 SpA / 1 SpD / 32 Spe  
+Modest Nature  
+- Power Gem  
+- Sludge Bomb  
+- Earth Power  
+- Spiky Shield  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 32 HP / 10 Def / 7 SpA / 3 SpD / 14 Spe  
+Modest Nature  
+- Protect  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 10 Def / 17 SpA / 5 SpD / 2 Spe  
+Calm Nature  
+- Scald  
+- Ice Beam  
+- Icy Wind  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 1 Atk / 8 Def / 20 SpD / 5 Spe  
+Careful Nature  
+- Flare Blitz  
+- Snarl  
+- Parting Shot  
+- Fake Out  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 15 Atk / 18 SpD / 1 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Grassy Glide  
+- High Horsepower

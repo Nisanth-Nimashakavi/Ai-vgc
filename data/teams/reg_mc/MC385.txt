@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 19 HP / 11 SpA / 4 SpD / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Hyper Voice  
+- Tailwind  
+- Protect  
+
+Raichu @ Raichunite Y  
+Ability: Lightning Rod  
+Level: 50  
+EVs: 21 HP / 17 Def / 28 Spe  
+Timid Nature  
+- Zap Cannon  
+- Focus Blast  
+- Fake Out  
+- Protect  
+
+Arcanine-Hisui @ Focus Sash  
+Ability: Rock Head  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Jolly Nature  
+- Flare Blitz  
+- Extreme Speed  
+- Protect  
+- Head Smash  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 28 HP / 30 Atk / 2 Def / 4 SpD / 2 Spe  
+Adamant Nature  
+- Grassy Glide  
+- Wood Hammer  
+- Fake Out  
+- High Horsepower  
+
+Gholdengo @ Life Orb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 7 HP / 27 SpA / 32 Spe  
+Timid Nature  
+- Make It Rain  
+- Shadow Ball  
+- Nasty Plot  
+- Protect  
+
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 32 HP / 12 Def / 15 SpD / 7 Spe  
+Calm Nature  
+- Muddy Water  
+- Coil  
+- Hypnosis  
+- Protect

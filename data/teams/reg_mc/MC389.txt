@@ -1,0 +1,59 @@
+Charizard @ Charizardite Y  
+Ability: Blaze  
+Level: 50  
+EVs: 4 HP / 11 Def / 23 SpA / 28 Spe  
+Timid Nature  
+- Heat Wave  
+- Weather Ball  
+- Solar Beam  
+- Protect  
+
+Noivern @ Focus Sash  
+Ability: Infiltrator  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Draco Meteor  
+- Super Fang  
+- Tailwind  
+- Protect  
+
+Venusaur @ Wide Lens  
+Ability: Chlorophyll  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Leaf Storm  
+- Sludge Bomb  
+- Sleep Powder  
+- Protect  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 10 SpD / 24 Spe  
+Careful Nature  
+- Fake Out  
+- Flare Blitz  
+- Snarl  
+- Parting Shot  
+
+Garchomp @ Life Orb  
+Ability: Rough Skin  
+Level: 50  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Jolly Nature  
+- Dragon Claw  
+- Stomping Tantrum  
+- Earthquake  
+- Protect  
+
+Gholdengo @ White Herb  
+Ability: Good as Gold  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Modest Nature  
+- Make It Rain  
+- Shadow Ball  
+- Focus Blast  
+- Protect

@@ -1,0 +1,59 @@
+Brutus 2.0 (Metagross-Mega) @ Metagrossite  
+Ability: Tough Claws  
+Level: 50  
+EVs: 2 HP / 21 Atk / 11 Def / 32 Spe  
+Jolly Nature  
+- Iron Head  
+- Psychic Fangs  
+- Body Press  
+- Protect  
+
+Cotton Candy Pills (Gengar-Mega) @ Gengarite  
+Ability: Shadow Tag  
+Level: 50  
+EVs: 20 HP / 4 Def / 10 SpA / 32 Spe  
+Modest Nature  
+- Shadow Ball  
+- Sludge Bomb  
+- Substitute  
+- Protect  
+
+Wolfey's Labubu (Incineroar) @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 10 Def / 1 SpD / 23 Spe  
+Impish Nature  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+- Fake Out  
+
+5 BIG BOOMS (Kommo-o) @ Grassy Seed  
+Ability: Soundproof  
+Level: 50  
+EVs: 10 HP / 1 Def / 20 SpA / 5 SpD / 30 Spe  
+Modest Nature  
+- Clanging Scales  
+- Aura Sphere  
+- Clangorous Soul  
+- Protect  
+
+B.I.G (Kingambit) @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 32 HP / 15 Atk / 18 SpD / 1 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Sucker Punch  
+- Iron Head  
+- Protect  
+
+Bad Dum Dumbbb (Rillaboom) @ Life Orb  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 24 HP / 15 Atk / 1 SpD / 26 Spe  
+Adamant Nature  
+- Drum Beating  
+- Grassy Glide  
+- High Horsepower  
+- Fake Out

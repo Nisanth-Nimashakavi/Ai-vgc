@@ -1,0 +1,53 @@
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+EVs: 32 HP / 23 Atk / 5 SpD / 6 Spe  
+Adamant Nature  
+- Glaive Rush  
+- Ice Shard  
+- Swords Dance  
+- Protect  
+
+Ninetales-Alola @ Light Clay  
+Ability: Snow Warning  
+EVs: 5 HP / 7 Def / 22 SpA / 32 Spe  
+Timid Nature  
+- Aurora Veil  
+- Blizzard  
+- Moonblast  
+- Protect  
+
+Sneasler @ Grassy Seed  
+Ability: Unburden  
+EVs: 32 HP / 10 Atk / 7 Def / 17 Spe  
+Adamant Nature  
+- Close Combat  
+- Dire Claw  
+- Coaching  
+- Fake Out  
+
+Basculegion @ Mystic Water  
+Ability: Adaptability  
+EVs: 20 Atk / 14 Def / 32 Spe  
+Jolly Nature  
+- Last Respects  
+- Aqua Jet  
+- Wave Crash  
+- Protect  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+EVs: 17 HP / 32 Atk / 9 SpD / 8 Spe  
+Adamant Nature  
+- Fake Out  
+- Grassy Glide  
+- Wood Hammer  
+- High Horsepower  
+
+Incineroar @ Sitrus Berry  
+Ability: Intimidate  
+EVs: 30 HP / 21 Def / 13 SpD / 2 Spe  
+Impish Nature  
+- Fake Out  
+- Flare Blitz  
+- Darkest Lariat  
+- Parting Shot

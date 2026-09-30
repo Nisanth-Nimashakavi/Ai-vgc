@@ -1,0 +1,59 @@
+Indeedee-F (F) @ Rocky Helmet  
+Ability: Synchronize  
+Level: 50  
+EVs: 32 HP / 26 Def / 8 Spe  
+Bold Nature  
+- Follow Me  
+- Psychic  
+- Fake Out  
+- Protect  
+
+Delphox (M) @ Delphoxite  
+Ability: Blaze  
+Level: 50  
+EVs: 23 HP / 11 SpA / 32 Spe  
+Timid Nature  
+- Heat Wave  
+- Psychic  
+- Nasty Plot  
+- Protect  
+
+Sinistcha-Masterpiece @ Colbur Berry  
+Ability: Hospitality  
+Level: 50  
+EVs: 32 HP / 14 Def / 19 SpD / 1 Spe  
+Bold Nature  
+- Matcha Gotcha  
+- Rage Powder  
+- Life Dew  
+- Protect  
+
+Sneasler (F) @ Focus Sash  
+Ability: Poison Touch  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Fake Out  
+- Poison Jab  
+- Close Combat  
+- Quick Guard  
+
+Incineroar (M) @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 2 SpD / 32 Spe  
+Careful Nature  
+- Fake Out  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+
+Floette-Mega (F) @ Floettite  
+Ability: Flower Veil  
+Level: 50  
+EVs: 24 HP / 10 Def / 32 Spe  
+Modest Nature  
+- Protect  
+- Draining Kiss  
+- Dazzling Gleam  
+- Calm Mind

@@ -1,0 +1,60 @@
+Baxcalibur-Mega (F) @ Baxcalibrite  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 17 HP / 5 Atk / 3 Def / 9 SpD / 32 Spe  
+Jolly Nature  
+- Protect  
+- Dragon Dance  
+- Icicle Crash  
+- Glaive Rush  
+
+Milotic (F) @ Leftovers  
+Ability: Competitive  
+Level: 50  
+Shiny: Yes  
+EVs: 29 HP / 21 Def / 5 SpA / 5 SpD / 6 Spe  
+Calm Nature  
+- Protect  
+- Coil  
+- Hypnosis  
+- Muddy Water  
+
+Rillaboom (M) @ Sitrus Berry  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 24 HP / 5 Atk / 2 Def / 30 SpD / 5 Spe  
+Careful Nature  
+- Fake Out  
+- Grassy Glide  
+- High Horsepower  
+- Drum Beating  
+
+Arcanine-Hisui (M) @ Focus Sash  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Protect  
+- Flare Blitz  
+- Head Smash  
+- Extreme Speed  
+
+Excadrill (F) @ Life Orb  
+Ability: Sand Rush  
+Level: 50  
+EVs: 4 HP / 25 Atk / 5 SpD / 32 Spe  
+Adamant Nature  
+- Protect  
+- Rock Slide  
+- High Horsepower  
+- Iron Head  
+
+Tyranitar-Mega (F) @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 30 HP / 6 Atk / 10 Def / 10 SpD / 10 Spe  
+Adamant Nature  
+- Protect  
+- Low Kick  
+- Rock Slide  
+- Knock Off

@@ -1,0 +1,59 @@
+Meowstic-F (F) @ Meowsticite  
+Ability: Competitive  
+Level: 50  
+EVs: 5 HP / 32 SpA / 29 Spe  
+Timid Nature  
+- Expanding Force  
+- Alluring Voice  
+- Nasty Plot  
+- Protect  
+
+Indeedee-F (F) @ Colbur Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 28 Def / 6 SpD  
+Bold Nature  
+- Dazzling Gleam  
+- Trick Room  
+- Helping Hand  
+- Follow Me  
+
+Pelipper @ Focus Sash  
+Ability: Drizzle  
+Level: 50  
+EVs: 2 HP / 1 Def / 30 SpA / 1 SpD / 32 Spe  
+Timid Nature  
+- Weather Ball  
+- Hurricane  
+- Tailwind  
+- Wide Guard  
+
+Archaludon @ Leftovers  
+Ability: Stamina  
+Level: 50  
+EVs: 30 HP / 2 Def / 5 SpA / 19 SpD / 10 Spe  
+Bold Nature  
+- Dragon Pulse  
+- Flash Cannon  
+- Electro Shot  
+- Protect  
+
+Golisopod @ Golisopite  
+Ability: Emergency Exit  
+Level: 50  
+EVs: 22 HP / 21 Atk / 3 Def / 20 SpD  
+Adamant Nature  
+- First Impression  
+- U-turn  
+- Iron Head  
+- Liquidation  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 16 HP / 32 Atk / 18 Spe  
+Jolly Nature  
+- Close Combat  
+- Acrobatics  
+- Fake Out  
+- Protect

@@ -1,0 +1,53 @@
+Crabominable @ Crabominite  
+Ability: Hyper Cutter  
+EVs: 32 HP / 32 Atk / 2 SpD  
+Brave Nature  
+- Ice Hammer  
+- Drain Punch  
+- Rock Slide  
+- Protect  
+
+Camerupt @ Cameruptite  
+Ability: Solid Rock  
+EVs: 32 HP / 2 Def / 32 SpA  
+Quiet Nature  
+- Heat Wave  
+- Ancient Power  
+- Earth Power  
+- Protect  
+
+Indeedee-F @ Rocky Helmet  
+Ability: Psychic Surge  
+EVs: 32 HP / 32 Def / 2 SpD  
+Relaxed Nature  
+- Trick Room  
+- Helping Hand  
+- Follow Me  
+- Psychic  
+
+Hatterene @ Life Orb  
+Ability: Magic Bounce  
+EVs: 27 HP / 7 Def / 32 SpA  
+Quiet Nature  
+- Expanding Force  
+- Dazzling Gleam  
+- Trick Room  
+- Protect  
+
+Armarouge @ Psychic Seed  
+Ability: Flash Fire  
+EVs: 29 HP / 1 Def / 32 SpA / 4 SpD  
+Quiet Nature  
+- Trick Room  
+- Aura Sphere  
+- Heat Wave  
+- Expanding Force  
+
+Gallade @ Sitrus Berry  
+Ability: Sharpness  
+EVs: 32 HP / 32 Atk / 2 Def  
+Brave Nature  
+- Trick Room  
+- Wide Guard  
+- Psycho Cut  
+- Sacred Sword

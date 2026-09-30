@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 1 HP / 32 SpA / 1 SpD / 32 Spe  
+Naive Nature  
+- Hyper Voice  
+- Draco Meteor  
+- Double-Edge  
+- Protect  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Adamant Nature  
+- Dire Claw  
+- Close Combat  
+- Rock Slide  
+- Protect  
+
+Kingambit @ Black Glasses  
+Ability: Defiant  
+Level: 50  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Sucker Punch  
+- Iron Head  
+- Protect  
+
+Excadrill @ Life Orb  
+Ability: Sand Rush  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Earthquake  
+- Iron Head  
+- High Horsepower  
+- Protect  
+
+Tyranitar @ Choice Scarf  
+Ability: Sand Stream  
+Level: 50  
+EVs: 32 Atk / 1 Def / 1 SpD / 32 Spe  
+Jolly Nature  
+- Rock Slide  
+- Crunch  
+- Ice Punch  
+- High Horsepower  
+
+Indeedee (M) @ Focus Sash  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 1 HP / 1 Def / 32 SpA / 32 Spe  
+Timid Nature  
+- Expanding Force  
+- Trick Room  
+- Helping Hand  
+- Protect

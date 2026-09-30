@@ -1,0 +1,59 @@
+Baxcalibur @ Baxcalibrite  
+Ability: Thermal Exchange  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Glaive Rush  
+- Icicle Crash  
+- Ice Shard  
+- Protect  
+
+Glimmora @ Glimmoranite  
+Ability: Toxic Debris  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Sludge Bomb  
+- Power Gem  
+- Earth Power  
+- Spiky Shield  
+
+Rillaboom @ Miracle Seed  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 26 Atk / 8 Spe  
+Adamant Nature  
+- Fake Out  
+- Grassy Glide  
+- Wood Hammer  
+- U-turn  
+
+Pawmot @ Focus Sash  
+Ability: Iron Fist  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Revival Blessing  
+- Double Shock  
+- Close Combat  
+- Ice Punch  
+
+Talonflame @ Sharp Beak  
+Ability: Gale Wings  
+Level: 50  
+EVs: 1 HP / 32 Atk / 1 SpD / 32 Spe  
+Adamant Nature  
+- Dual Wingbeat  
+- Flare Blitz  
+- Tailwind  
+- Protect  
+
+Basculegion (M) @ Life Orb  
+Ability: Adaptability  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Wave Crash  
+- Aqua Jet  
+- Last Respects  
+- Protect

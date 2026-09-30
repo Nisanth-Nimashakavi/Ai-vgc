@@ -1,0 +1,59 @@
+Gardevoir @ Gardevoirite  
+Ability: Trace  
+Level: 50  
+EVs: 4 HP / 28 Def / 15 SpA / 19 Spe  
+Modest Nature  
+- Hyper Voice  
+- Protect  
+- Expanding Force  
+- Encore  
+
+Volcarona @ Sitrus Berry  
+Ability: Flame Body  
+Level: 50  
+EVs: 31 HP / 27 Def / 5 SpA / 3 Spe  
+Bold Nature  
+- Overheat  
+- Struggle Bug  
+- Protect  
+- Rage Powder  
+
+Indeedee-F (F) @ Colbur Berry  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 31 HP / 32 Def / 3 SpD  
+Bold Nature  
+- Follow Me  
+- Helping Hand  
+- Trick Room  
+- Terrain Pulse  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 32 HP / 32 Atk / 2 Spe  
+Adamant Nature  
+- Dire Claw  
+- Rock Tomb  
+- Close Combat  
+- Protect  
+
+Basculegion (M) @ Choice Scarf  
+Ability: Adaptability  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Jolly Nature  
+- Last Respects  
+- Wave Crash  
+- Aqua Jet  
+- Flip Turn  
+
+Aerodactyl @ Focus Sash  
+Ability: Unnerve  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Jolly Nature  
+- Rock Slide  
+- Dual Wingbeat  
+- Protect  
+- Tailwind

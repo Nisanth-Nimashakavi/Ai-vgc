@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 Atk / 32 SpA / 32 Spe  
+Naive Nature  
+- Double-Edge  
+- Tailwind  
+- Protect  
+- Hyper Voice  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 32 Atk / 2 SpD / 32 Spe  
+Jolly Nature  
+- Iron Head  
+- Earthquake  
+- Rock Slide  
+- Protect  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 17 HP / 18 Atk / 31 Spe  
+Jolly Nature  
+- Rock Slide  
+- Knock Off  
+- Low Kick  
+- Protect  
+
+Milotic @ Leftovers  
+Ability: Competitive  
+Level: 50  
+EVs: 22 HP / 28 Def / 15 SpD / 1 Spe  
+Calm Nature  
+- Scald  
+- Protect  
+- Recover  
+- Icy Wind  
+
+Sneasler @ White Herb  
+Ability: Unburden  
+Level: 50  
+EVs: 32 Atk / 2 Def / 32 Spe  
+Adamant Nature  
+- Fake Out  
+- Close Combat  
+- Dire Claw  
+- Protect  
+
+Indeedee (M) @ Twisted Spoon  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 2 Def / 32 SpA / 32 Spe  
+Timid Nature  
+- Helping Hand  
+- Hyper Voice  
+- Protect  
+- Expanding Force

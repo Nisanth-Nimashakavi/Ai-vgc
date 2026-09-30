@@ -1,0 +1,59 @@
+Gardevoir @ Gardevoirite  
+Ability: Trace  
+Level: 50  
+EVs: 28 HP / 17 Def / 10 SpA / 11 Spe  
+Modest Nature  
+- Hyper Voice  
+- Expanding Force  
+- Shadow Ball  
+- Protect  
+
+Indeedee-F (F) @ Rocky Helmet  
+Ability: Psychic Surge  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Sassy Nature  
+- Terrain Pulse  
+- Helping Hand  
+- Follow Me  
+- Trick Room  
+
+Sneasler @ Psychic Seed  
+Ability: Unburden  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- Throat Chop  
+- Close Combat  
+- Gunk Shot  
+- Protect  
+
+Armarouge @ Life Orb  
+Ability: Flash Fire  
+Level: 50  
+EVs: 32 HP / 32 SpA / 2 SpD  
+Modest Nature  
+- Armor Cannon  
+- Expanding Force  
+- Trick Room  
+- Energy Ball  
+
+Excadrill @ Focus Sash  
+Ability: Sand Rush  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Adamant Nature  
+- High Horsepower  
+- Iron Head  
+- Rock Slide  
+- Protect  
+
+Tyranitar @ Tyranitarite  
+Ability: Sand Stream  
+Level: 50  
+EVs: 22 HP / 12 Atk / 32 Def  
+Adamant Nature  
+- Rock Slide  
+- Knock Off  
+- Low Kick  
+- Protect

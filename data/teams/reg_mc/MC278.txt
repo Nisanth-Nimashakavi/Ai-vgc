@@ -1,0 +1,59 @@
+Salamence @ Salamencite  
+Ability: Intimidate  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Naive Nature  
+- Protect  
+- Tailwind  
+- Hyper Voice  
+- Draco Meteor  
+
+Volcarona @ Rocky Helmet  
+Ability: Flame Body  
+Level: 50  
+EVs: 32 HP / 32 Def / 1 SpA / 1 SpD  
+Bold Nature  
+- Protect  
+- Overheat  
+- Struggle Bug  
+- Rage Powder  
+
+Kingambit @ Chople Berry  
+Ability: Defiant  
+Level: 50  
+EVs: 23 HP / 15 Atk / 28 Spe  
+Adamant Nature  
+- Kowtow Cleave  
+- Iron Head  
+- Sucker Punch  
+- Low Kick  
+
+Rillaboom @ Life Orb  
+Ability: Grassy Surge  
+Level: 50  
+EVs: 32 HP / 15 Atk / 19 Spe  
+Adamant Nature  
+- Fake Out  
+- Wood Hammer  
+- Superpower  
+- Grassy Glide  
+
+Glimmora @ Glimmoranite  
+Ability: Toxic Debris  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Spiky Shield  
+- Sludge Bomb  
+- Power Gem  
+- Earth Power  
+
+Hippowdon @ Leftovers  
+Ability: Sand Stream  
+Level: 50  
+EVs: 32 HP / 6 Def / 28 SpD  
+Careful Nature  
+- Protect  
+- High Horsepower  
+- Yawn  
+- Ice Fang
