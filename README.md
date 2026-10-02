@@ -67,3 +67,9 @@ BOT=nimnimbot2 scripts/bot.sh --accept --top 3                             # tak
 
 `scripts/bot.sh --help` lists every option. Summaries of the saved games: `scripts/bo3_sum.py`,
 `scripts/team_sum.py`, `scripts/opp_habits.py`.
+
+### Ladder results
+
+Reg M-C CTS Bo1 ladder rating after each game, by team (`uv run --extra viz python scripts/ladder_plot.py`):
+
+![Ladder rating by team](docs/ladder_by_team.png)
