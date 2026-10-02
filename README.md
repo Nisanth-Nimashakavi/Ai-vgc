@@ -73,3 +73,15 @@ BOT=nimnimbot2 scripts/bot.sh --accept --top 3                             # tak
 Reg M-C CTS Bo1 ladder rating after each game, by team (`uv run --extra viz python scripts/ladder_plot.py`):
 
 ![Ladder rating by team](docs/ladder_by_team.png)
+
+Commands behind it (CTS Bo1, Reg M-C, one-turn search; each team with its own v7 specialist model):
+
+```bash
+# MC301 (Sun + Trick Room): best so far, peak 1646
+scripts/bot.sh --ladder --cts --use MC301 --model data/models/mc-cts-rnad-v7-MC301.pt --opp-model data/models/mc-cts-opp-v6.pt
+# MC378 (rain): peak 1568
+scripts/bot.sh --ladder --cts --use MC378 --model data/models/mc-cts-rnad-v7-MC378.pt --opp-model data/models/mc-cts-opp-v6.pt
+```
+
+The earlier teams (MC147, MC196, MC358, MC371, MC408) were laddered with the general model
+(`mc-cts-rnad-v6.pt`) and `--use <team>` / `--top`; the games record the team and, since Oct 1, the model.
