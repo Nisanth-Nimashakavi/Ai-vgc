@@ -78,7 +78,7 @@ Commands behind it (CTS Bo1, Reg M-C, one-turn search; each team with its own v7
 
 ```bash
 # MC301 (Sun + Trick Room): best so far, peak 1646
-scripts/bot.sh --ladder --cts --use MC301 --model data/models/mc-cts-rnad-v7-MC301.pt --opp-model data/models/mc-cts-opp-v6.pt
+cd ~/projects/ai-vgc && cp data/teams/reg_mc/MC301.txt data/teams/reg_mc_top/ && scripts/bot.sh --ladder --cts --use MC301 --model data/models/mc-cts-rnad-v7-MC301.pt --opp-model data/models/mc-cts-opp-v6.pt --search-team-mass 0.8 --search-depth 2 --watch --set-guess --damage-inference
 # MC378 (rain): peak 1568
 scripts/bot.sh --ladder --cts --use MC378 --model data/models/mc-cts-rnad-v7-MC378.pt --opp-model data/models/mc-cts-opp-v6.pt
 ```
