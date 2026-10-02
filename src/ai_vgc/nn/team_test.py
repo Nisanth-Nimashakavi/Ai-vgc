@@ -39,6 +39,7 @@ def main() -> None:
     ap.add_argument("--rating", type=float, default=1700)
     ap.add_argument("--shard", default="0/1", help="i/k: play opponent teams i, i+k, i+2k, ...")
     ap.add_argument("--out", type=Path, default=None, help="CSV (default: data/team_tests/<team>.csv)")
+    ap.add_argument("--closed-sheets", action="store_true", help="closed team sheets (CTS Bo1)")
     args = ap.parse_args()
 
     i, k = map(int, args.shard.split("/"))
@@ -47,7 +48,7 @@ def main() -> None:
         raise SystemExit(f"no teams in {args.pool}")
     out = args.out or Path("data/team_tests") / f"{args.team.stem}.csv"
     proc = ensure_server(args.port, args.showdown)
-    common = dict(battle_format=args.format, max_concurrent_battles=args.games, accept_open_team_sheet=True,
+    common = dict(battle_format=args.format, max_concurrent_battles=args.games, accept_open_team_sheet=not args.closed_sheets,
                   log_level=40, server_configuration=ServerConfiguration(
                       f"ws://localhost:{args.port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?"))
     me = NNPlayer(args.model, args.rating, True, account_configuration=account("tt"),

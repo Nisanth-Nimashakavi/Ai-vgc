@@ -174,10 +174,14 @@ class NNPlayer(Player):
                  record: bool = False, rules: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.model = load_policy(model) if isinstance(model, (str, Path)) else model
+        self.model_name = Path(model).stem if isinstance(model, (str, Path)) else None  # for games.jsonl
         self.rating = rating
         self.greedy = greedy
         self.record = record
         self.rules = rules
+        self.speed_inference = False  # read their Speed from turn order into the features (ai_vgc.speed)
+        self.set_guess: tuple[str, str] | None = None  # (teams_dir, format): fill hidden sets into the features
+        self.damage_inference = False  # closed sheets: estimated opposing stats for the damage features (ai_vgc.bulk)
         self.steps: dict[str, list[dict]] = {}
         self.episodes: list[tuple[list[dict], float]] = []  # (steps, reward) per finished battle
         self.series_of: dict[str, tuple[str, int]] = {}  # battle tag -> (Bo3 room, game number)
@@ -285,6 +289,9 @@ class NNPlayer(Player):
         return "/team " + "".join(str(i) for i in [*leads, *back])
 
     async def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+        battle._spd_on = self.speed_inference
+        battle._guess = self.set_guess
+        battle._dmg_on = self.damage_inference
         assert isinstance(battle, DoubleBattle)
         self.attach_series(battle)
         if battle.battle_tag not in self.leads:
@@ -363,6 +370,147 @@ def action_mask(battle: DoubleBattle) -> np.ndarray:
     return mask
 
 
+# The --watch page: a status bar and a frame that shows the current battle, switching to each new
+# one (game 2/3 of a series, then the next match) by itself.
+WATCH_PAGE = """<!doctype html><meta charset=utf-8><title>nimnimbot</title>
+<style>
+html,body{margin:0;height:100%;background:#1b1d22;color:#ddd;font:14px system-ui,sans-serif}
+#bar{display:flex;gap:1.2em;align-items:center;height:26px;padding:0 12px;background:#262a31;font-size:13px}
+#bar b{color:#fff} #bar a{color:#8cf} #bar .sp{flex:1}
+iframe{border:0;width:100%;height:calc(100% - 26px);display:block}
+</style>
+<div id=bar><b id=who>nimnimbot</b><span id=vs></span><span id=game></span><span id=rec></span>
+<span class=sp></span><a id=link target=_blank>open on Showdown</a></div>
+<iframe id=f></iframe>
+<script>
+let cur = "", waiting = null;
+async function poll() {
+  try {
+    const s = await (await fetch("/status", {cache: "no-store"})).json();
+    who.textContent = s.user || "";
+    vs.textContent = s.opponent ? "vs " + s.opponent : "";
+    game.textContent = s.game ? "game " + s.game : "";
+    rec.textContent = "record " + s.record;
+    link.href = s.url;
+    if (s.tag && s.tag !== cur) {
+      // Let the frame finish showing the last game (up to 20 s) before moving to the new one.
+      waiting = waiting || Date.now();
+      let done = true;
+      try { done = !f.contentWindow.caughtUp || f.contentWindow.caughtUp(); } catch (e) {}
+      if (!done && Date.now() - waiting < 20000) return;
+      waiting = null;
+      cur = s.tag;
+      f.src = "/view?tag=" + encodeURIComponent(s.tag) + "&role=" + (s.role || "p1");
+      document.title = (s.opponent ? "vs " + s.opponent : "nimnimbot") + (s.game ? " (game " + s.game + ")" : "");
+    }
+  } catch (e) {}
+}
+poll(); setInterval(poll, 1500);
+</script>"""
+
+# The frame: Showdown's battle renderer (as in its replay embeds), fed the live log from /log. Its
+# scripts and styles come through the local server (/ps/..., fetched from play.pokemonshowdown.com
+# and cached), so browser extensions that block third-party scripts don't leave it blank.
+WATCH_VIEW = """<!doctype html><meta charset=utf-8>
+<link rel=stylesheet href="/ps/style/font-awesome.css">
+<link rel=stylesheet href="/ps/style/battle.css">
+<link rel=stylesheet href="/ps/style/client.css">
+<link rel=stylesheet href="/ps/style/utilichart.css">
+<style>
+/* Showdown's battle room at its normal size: the 640x360 battle top left, the log to its right,
+   the controls under the battle. */
+html,body{margin:0;height:100%;overflow:hidden;background:#444}
+.ps-room{top:0!important;border-left:0}
+.ps-room .battle-log{bottom:0}
+.ps-room .battle-controls{top:370px;bottom:0;padding:4px 0}
+.battle-controls .button{margin:0 0 6px 8px}
+</style>
+<body class=dark><div class="ps-room ps-room-opaque" id=room><div class=battle></div><div class=battle-log></div>
+<div class=battle-controls>
+<button class=button id=bplay><i class="fa fa-pause"></i><br>Pause</button>
+<button class=button id=bfirst><i class="fa fa-undo"></i><br>First turn</button><button class=button
+ id=bprev><i class="fa fa-step-backward"></i><br>Prev turn</button><button class=button
+ id=bnext><i class="fa fa-step-forward"></i><br>Skip turn</button><button class=button
+ id=bend><i class="fa fa-fast-forward"></i><br>Skip to end</button>
+<br><button class=button id=bview><i class="fa fa-random"></i> Switch viewpoint</button>
+<p id=wait style="margin-top:4px;color:#aaa;font-style:italic"></p>
+</div></div>
+
+<div id=err style="display:none;position:fixed;left:0;right:0;bottom:0;padding:8px 12px;background:#5a1d1d;
+color:#fdd;font:13px monospace;white-space:pre-wrap;z-index:99"></div>
+<script>
+// Show anything that breaks the renderer on the page itself (an autoplay refusal for the music isn't).
+function showErr(m) { if (/play\(\)|play method|NotAllowedError/.test(m)) return;
+  const e = document.getElementById("err"); e.style.display = "block"; e.textContent += m + "\\n"; }
+window.addEventListener("error", e => showErr("error: " + e.message + (e.filename ? " (" + e.filename + ":" + e.lineno + ")" : "")));
+window.addEventListener("unhandledrejection", e => showErr("error: " + (e.reason && e.reason.message || e.reason)));
+setTimeout(() => { if (typeof Battle === "undefined") showErr("Showdown's battle scripts didn't load (blocked by an extension or offline?)"); }, 8000);
+</script>
+<script src="/ps/js/lib/ps-polyfill.js"></script>
+<script src="/ps/config/config.js"></script>
+<script src="/ps/js/lib/jquery-1.11.0.min.js"></script>
+<script src="/ps/js/lib/html-sanitizer-minified.js"></script>
+<script src="/ps/js/battle-sound.js"></script>
+<script src="/ps/js/battledata.js"></script>
+<script src="/ps/data/pokedex-mini.js"></script>
+<script src="/ps/data/pokedex-mini-bw.js"></script>
+<script src="/ps/data/graphics.js"></script>
+<script src="/ps/data/pokedex.js"></script>
+<script src="/ps/data/moves.js"></script>
+<script src="/ps/data/abilities.js"></script>
+<script src="/ps/data/items.js"></script>
+<script src="/ps/data/teambuilder-tables.js"></script>
+<script src="/ps/js/battle-tooltips.js"></script>
+<script src="/ps/js/battle.js"></script>
+<script>
+const q = new URLSearchParams(location.search), tag = q.get("tag");
+window.exports = window;
+// The renderer stalls if it starts on an empty log (as at the very start of a battle), so it's
+// created once there is something to show, then fed the rest as it comes.
+var battle = null, n = 0;  // var: window.battle, for debugging
+async function poll() {
+  try {
+    const add = await (await fetch("/log?tag=" + encodeURIComponent(tag) + "&from=" + n, {cache: "no-store"})).json();
+    if (!add.length) return;
+    n += add.length;
+    if (!battle) {
+      battle = new Battle({id: tag, $frame: $(".battle"), $logFrame: $(".battle-log"),
+                           log: add, isReplay: false, paused: false, autoresize: false});
+      battle.setMute(true);
+      if (q.get("role") === "p2" && battle.setViewpoint) battle.setViewpoint("p2");
+      battle.messageShownTime = 1;  // "fast" in the replay speed menu: keeps up with a live game
+      battle.messageFadeTime = 50;
+      battle.scene.updateAcceleration();
+      battle.play();
+    } else {
+      add.forEach(l => battle.add(l));
+    }
+  } catch (e) { console.error(e); }
+}
+// Controls, as in Showdown's own battle room. While the bot plays, "live" is at the end of what's
+// happened so far; going back pauses following, and Skip to end / Play catches up again.
+const $id = id => document.getElementById(id);
+function refresh() {
+  if (!battle) return;
+  const live = battle.atQueueEnd && !battle.paused;
+  $id("bplay").innerHTML = battle.paused ? '<i class="fa fa-play"></i><br>Play' : '<i class="fa fa-pause"></i><br>Pause';
+  $id("bnext").disabled = $id("bend").disabled = battle.atQueueEnd;
+  $id("wait").textContent = battle.ended ? "" : live ? "Waiting for players..." : "";
+}
+$id("bplay").onclick = () => { if (!battle) return; battle.paused ? battle.play() : battle.pause(); refresh(); };
+$id("bfirst").onclick = () => { if (battle) { battle.seekTurn(0); battle.play(); refresh(); } };
+$id("bprev").onclick = () => { if (battle) { battle.seekBy(-1); refresh(); } };
+$id("bnext").onclick = () => { if (battle) { battle.skipTurn(); refresh(); } };
+$id("bend").onclick = () => { if (battle) { battle.seekTurn(Infinity); battle.play(); refresh(); } };
+$id("bview").onclick = () => { if (battle) { battle.switchViewpoint(); refresh(); } };
+setInterval(refresh, 500);
+// The watch page waits for this before switching to the next battle, so the end isn't cut off.
+window.caughtUp = () => !battle || battle.atQueueEnd;
+poll(); setInterval(poll, 1000);
+</script>"""
+
+
+
 class ChallengeMixin:
     """Accepts challenges in several formats, e.g. Bo1 and Bo3 of one regulation. Set
     `formats` (and optionally `allowed`, the user ids it accepts from) after construction.
@@ -377,8 +525,8 @@ class ChallengeMixin:
     save_dir: Path | None = None  # games.jsonl plus an HTML replay per game
     logs_dir: Path | None = None  # logs_<format>.json, the scraped logs' layout, for the bot's games only
     watch_url: str | None = None  # "https://play.pokemonshowdown.com/": print each battle's link there
-    watch_open = False  # also show it in the browser, in one tab that follows each new battle
-    _watching: list[str] | None = None  # [current battle url], read by the watch page's server
+    watch_open = False  # also show it in a local watch page that follows each new battle
+    _watching: list[str] | None = None  # [current battle url, tag], read by the watch page's server
     stop_after_match = False  # set by the first Ctrl-C: finish the current game / Bo3 series, then stop
     timer = False  # turn the battle timer on in every game (so opponents can't stall)
 
@@ -413,46 +561,77 @@ class ChallengeMixin:
         while self._busy():
             await asyncio.sleep(1)
 
-    def _watch(self, url: str) -> None:
-        """Point the watch tab at `url`. The first call starts a small local server and opens its
-        page once. Showdown won't run in an iframe, so after one click the page opens a battle tab
-        and then moves that same tab to each new battle (an opener may navigate its popup)."""
+    def _watch(self, url: str, tag: str) -> None:
+        """Show battle `tag` in the watch page. The first call starts a small local server and
+        opens its page once. Showdown's own client refuses to run in a frame, so the page's frame
+        draws the battle with Showdown's battle renderer (the one its replays use), fed live from
+        this bot's copy of the battle log. The page switches the frame to each new battle (the
+        next game of a series, or the next match) by itself."""
         if self._watching is not None:
-            self._watching[0] = url
+            self._watching[:] = [url, tag]
             return
         import http.server
+        import json as _json
         import threading
+        import urllib.parse
+        import urllib.request
         import webbrowser
 
-        self._watching = watching = [url]
-        page = b"""<!doctype html><title>nimnimbot</title>
-<style>body{font:16px sans-serif;background:#222;color:#ddd;padding:2em}
-button{font-size:1.2em;padding:.5em 1em}</style>
-<button id=b>Watch battles</button><p id=s>Click once: the battles open in one tab that follows each new game.</p>
-<script>
-let win = null, cur = "";
-const b = document.getElementById("b"), s = document.getElementById("s");
-async function latest() { return (await fetch("/current", {cache: "no-store"})).text(); }
-b.onclick = async () => {
-  cur = await latest();
-  win = window.open(cur, "nimnimbot-battle");
-  s.textContent = win ? "Watching: " + cur : "Popup blocked: allow popups for this page and click again.";
-};
-setInterval(async () => {
-  if (!win) return;
-  if (win.closed) { win = null; s.textContent = "Battle tab closed: click to reopen."; return; }
-  try {
-    const u = await latest();
-    if (u && u !== cur) { cur = u; win.location.href = u; s.textContent = "Watching: " + u; }
-  } catch (e) {}
-}, 2000);
-</script>"""
+        self._watching = watching = [url, tag]
+        bot = self
+
+        def lines(tag: str) -> list[str]:
+            battle = bot._battles.get(tag)
+            if battle is None:
+                return []
+            # The open team sheet prompt is a button for the players; it does nothing here.
+            return ["|".join(m) for m in list(battle._replay_data)
+                    if len(m) > 1 and not (m[1] == "uhtml" and len(m) > 2 and m[2] == "otsrequest")]
+
+        def status() -> dict:
+            battle = bot._battles.get(watching[1])
+            series = bot.series_of.get(watching[1]) if hasattr(bot, "series_of") else None
+            return {"tag": watching[1], "url": watching[0], "user": bot.username,
+                    "role": battle.player_role if battle else None,
+                    "opponent": battle.opponent_username if battle else None,
+                    "game": series[1] if series else None,
+                    "record": f"{bot.n_won_battles}-{bot.n_finished_battles - bot.n_won_battles}"}
+
+        assets: dict[str, tuple[bytes, str]] = {}
+
+        def ps_asset(path: str) -> tuple[bytes, str]:
+            if path not in assets:
+                req = urllib.request.Request("https://play.pokemonshowdown.com/" + path,
+                                             headers={"User-Agent": "nimnimbot watch page"})
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    assets[path] = (r.read(), r.headers.get_content_type())
+            return assets[path]
+
+        page = WATCH_PAGE.encode()
+        view = WATCH_VIEW.encode()
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
-                body = watching[0].encode() if self.path == "/current" else page
+                u = urllib.parse.urlparse(self.path)
+                q = urllib.parse.parse_qs(u.query)
+                if u.path == "/status":
+                    body, kind = _json.dumps(status()).encode(), "application/json"
+                elif u.path == "/log":
+                    start = int(q.get("from", ["0"])[0])
+                    body, kind = _json.dumps(lines(q.get("tag", [""])[0])[start:]).encode(), "application/json"
+                elif u.path == "/view":
+                    body, kind = view, "text/html"
+                elif u.path.startswith("/ps/"):
+                    try:
+                        body, kind = ps_asset(u.path[4:] + (f"?{u.query}" if u.query else ""))
+                    except Exception as e:
+                        self.send_error(502, repr(e))
+                        return
+                else:
+                    body, kind = page, "text/html"
                 self.send_response(200)
-                self.send_header("Content-Type", "text/plain" if self.path == "/current" else "text/html")
+                self.send_header("Content-Type", kind)
+                self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(body)
 
@@ -462,7 +641,7 @@ setInterval(async () => {
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         page_url = f"http://127.0.0.1:{server.server_address[1]}/"
-        print(f"watch tab: {page_url}", flush=True)
+        print(f"watch page: {page_url}", flush=True)
         webbrowser.open(page_url)
 
     async def _handle_battle_message(self, split_messages: list[list[str]]):
@@ -480,7 +659,7 @@ setInterval(async () => {
             url = self.watch_url + battle.battle_tag
             print(f"watch: {url}", flush=True)
             if self.watch_open:
-                self._watch(url)
+                self._watch(url, battle.battle_tag)
         return battle
 
     def _battle_finished_callback(self, battle: AbstractBattle) -> None:
@@ -499,6 +678,7 @@ setInterval(async () => {
                    "theirs": [m.species for m in battle.opponent_team.values()],
                    # Team file the pool last handed out (ladder plays one match at a time).
                    "team": getattr(self._team, "last_name", None),
+                   "model": getattr(self, "model_name", None),
                    # The bot's view of the battle, as Showdown sent it (our side's exact HP included).
                    "log": battle._build_replay_log()}
             with open(self.save_dir / "games.jsonl", "a") as f:
@@ -623,6 +803,7 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--rating", type=float, default=1700)
+    ap.add_argument("--opponent-rating", type=float, default=None, help="an nn: opponent's rating input (default: --rating)")
     ap.add_argument("--greedy", action="store_true", help="always play the most likely action")
     ap.add_argument("--no-rules", action="store_true", help="don't mask moves that are sure to fail (rules.py)")
     ap.add_argument("--opponent-no-rules", action="store_true", help="--no-rules for an nn: opponent")
@@ -659,6 +840,23 @@ def main() -> None:
                     help="closed team sheets: score each play against this many guesses at the opponent's "
                          "hidden sets (common sets that fit what they've shown), weighted by how likely each is")
     ap.add_argument("--search-prior", type=float, default=0.0, help="weight on the policy's log-probability")
+    ap.add_argument("--speed-inference", action="store_true",
+                    help="narrow opposing Speed stats from turn order into the features (ai_vgc.speed); "
+                         "for models trained with it (rl.py --speed-inference)")
+    ap.add_argument("--damage-inference", action="store_true",
+                    help="closed sheets: estimate opposing stats (usage, narrowed by damage seen) so the damage "
+                         "features aren't empty; for models trained with it (rl.py --damage-inference)")
+    ap.add_argument("--set-guess", action="store_true",
+                    help="closed sheets: fill the opponent's unrevealed items, abilities and moves into the "
+                         "features with search's best guess; for models trained with it (rl.py --set-guess)")
+    ap.add_argument("--search-team-mass", type=float, default=None,
+                    help="closed sheets: share of search's set guesses from whole known teams that match the "
+                         "opponent's preview (default 0.8; 0 = each Pokemon's own usage only)")
+    ap.add_argument("--search-depth", type=int, default=1, choices=[1, 2],
+                    help="2: score each turn-1 playout after a second simulated turn")
+    ap.add_argument("--search-k2", type=int, default=3, help="depth 2: our candidates on turn 2")
+    ap.add_argument("--search-opp-k2", type=int, default=3, help="depth 2: the opponent's candidates on turn 2")
+    ap.add_argument("--search-seeds2", type=int, default=1, help="depth 2: simulations per turn-2 pairing")
     ap.add_argument("--adapt", action="store_true",
                     help="Bo3: pick games 2-3 previews against the opponent's last leads (bo3.py)")
     ap.add_argument("--adapt-k", type=int, default=8, help="our candidate previews for --adapt")
@@ -699,6 +897,10 @@ def main() -> None:
                          "pool when --teams is small, or opponents' spreads fall back to 0 EVs")
     args = ap.parse_args()
     torch.set_num_threads(1)
+    if args.search_team_mass is not None:
+        from ai_vgc.nn import search as _search
+
+        _search.TEAM_MASS = args.search_team_mass
 
     def teams() -> RandomPoolTeambuilder:
         if args.gauntlet:
@@ -717,6 +919,8 @@ def main() -> None:
     # The sim bridge (search) still needs the local Showdown checkout, but not a local server.
     proc = None if public else ensure_server(args.port, args.showdown)
     common = dict(
+        # A slow decision (or network hiccup) shouldn't cost the connection: wait 60 s for pongs.
+        ping_interval=20.0, ping_timeout=60.0,
         battle_format=args.format, max_concurrent_battles=args.concurrency,
         accept_open_team_sheet=not args.closed_sheets,
         server_configuration=ShowdownServerConfiguration if public else ServerConfiguration(
@@ -744,7 +948,8 @@ def main() -> None:
                                             fmt=formats[0], teams_dir=args.sets or args.teams or TEAMS_DIR,
                                             showdown=args.showdown or "pokemon-showdown", k=args.search_k,
                                             opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
-                                            prior=args.search_prior, **kw)
+                                            depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
+                                            seeds2=args.search_seeds2, prior=args.search_prior, **kw)
                 bot.formats = formats
                 bot.counter_t1 = args.counter_t1
                 if public and not args.no_munchstats:
@@ -756,12 +961,29 @@ def main() -> None:
             if public:
                 _public_login(bot, password)
             bot.vary, bot.vary_k, bot.vary_margin = args.vary, args.vary_k, args.vary_margin
+            bot.speed_inference = args.speed_inference
+            bot.damage_inference = args.damage_inference
+            bot.set_guess = (str(args.sets or args.teams or TEAMS_DIR), formats[0]) if args.set_guess else None
             bot.change_after_loss = args.change_after_loss
             bot.save_dir = args.save_dir / time.strftime("%Y-%m-%d")
             bot.logs_dir = args.logs_dir
             bot.watch_url = "https://play.pokemonshowdown.com/" if public else f"http://localhost:{args.port}/"
             bot.watch_open = args.watch
             bot.timer = public and not args.no_timer
+            if public:
+                import threading
+
+                def watchdog():
+                    # poke-env's listener just ends when the server drops the connection, leaving the
+                    # bot waiting forever; exit with 75 instead so scripts/bot.sh logs in again.
+                    while True:
+                        time.sleep(5)
+                        sock = getattr(bot.ps_client, "websocket", None)
+                        if sock is not None and getattr(sock.state, "name", "") == "CLOSED":
+                            print("connection to Showdown lost: exiting to reconnect", flush=True)
+                            os._exit(75)
+
+                threading.Thread(target=watchdog, daemon=True).start()
             if args.from_:
                 bot.allowed = {to_id_str(u) for u in args.from_}
             where = "play.pokemonshowdown.com" if public else f"http://localhost:{args.port}"
@@ -811,12 +1033,17 @@ def main() -> None:
                               account_configuration=account("nns"), team=teams(), opp_model=args.opp_model,
                               fmt=args.format, teams_dir=args.sets or args.teams or TEAMS_DIR,
                               showdown=args.showdown or "pokemon-showdown", k=args.search_k,
-                              opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds, prior=args.search_prior, **kw)
+                              opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
+                              depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
+                              seeds2=args.search_seeds2, prior=args.search_prior, **kw)
             me.counter_t1 = args.counter_t1
         else:
             me = NNPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,
                           account_configuration=account("nn"), team=teams(), **common)
         me.vary, me.vary_k, me.vary_margin = args.vary, args.vary_k, args.vary_margin
+        me.speed_inference = args.speed_inference
+        me.damage_inference = args.damage_inference
+        me.set_guess = (str(args.sets or args.teams or TEAMS_DIR), args.format) if args.set_guess else None
         me.change_after_loss = args.change_after_loss
         if args.adapt:
             from ai_vgc.nn.bo3 import Adapter
@@ -842,7 +1069,8 @@ def main() -> None:
             return
         if args.opponent.startswith("nn:"):
             opp_team = RandomPoolTeambuilder(args.opponent_teams) if args.opponent_teams else teams()
-            opp = NNPlayer(args.opponent[3:], args.rating, args.greedy, rules=not args.opponent_no_rules,
+            opp = NNPlayer(args.opponent[3:], args.opponent_rating or args.rating, args.greedy,
+                           rules=not args.opponent_no_rules,
                            account_configuration=account("nnopp"),
                            team=opp_team, **common)
             opp.repeat = tuple(args.opponent_repeat) if args.opponent_repeat else None

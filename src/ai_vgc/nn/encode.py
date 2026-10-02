@@ -197,6 +197,66 @@ def _moves(mon: Pokemon) -> list[Move]:
     return list(mon.moves.values())[:4]
 
 
+@cache
+def _move(move_id: str) -> Move | None:
+    try:
+        return Move(move_id, gen=9)
+    except Exception:
+        return None
+
+
+def _guesses(battle: DoubleBattle) -> dict:
+    """Closed sheets, with `battle._guess` = (teams_dir, format) set by the player: search's most
+    likely world (`search.worlds`: known whole teams matching their preview, else each species'
+    usage), as {name: (item, ability, moves, spread)}. Cached per turn and per what's revealed."""
+    from ai_vgc.nn.search import worlds
+
+    teams_dir, fmt = battle._guess
+    # Keyed by what's revealed, not the turn, so search's simulated copies of a position (which
+    # rarely reveal anything new) reuse the live battle's guess instead of redoing it per leaf.
+    seen = tuple(sorted((m.name, m.item, m.ability or "", tuple(sorted(m.moves))) for m in battle.opponent_team.values()))
+    key = (battle.battle_tag, seen)
+    if key in _GUESS_CACHE:
+        return _GUESS_CACHE[key]
+    try:
+        out = worlds(battle, teams_dir, 1, fmt)[0][0]
+    except Exception:
+        out = {}
+    if len(_GUESS_CACHE) > 20000:
+        _GUESS_CACHE.clear()
+    _GUESS_CACHE[key] = out
+    return out
+
+
+_GUESS_CACHE: dict = {}
+
+
+def _hidden(battle: DoubleBattle, mon: Pokemon, ours: bool) -> tuple[str, str, list[tuple[Move, bool]]]:
+    """(item, ability, [(move, guessed)]) to encode for a Pokemon. Ours, and theirs without set
+    guessing on: what poke-env knows. With it (`battle._guess`), an opposing item, ability or move
+    slot not revealed yet is filled in from `_guesses`; guessed moves are marked in mv_dyn."""
+    item, ability = mon.item or "", mon.ability or ""
+    moves = [(m, False) for m in _moves(mon)]
+    if ours or not battle.__dict__.get("_guess"):
+        return item, ability, moves
+    world = _guesses(battle).get(mon.name)
+    if not world:
+        return item, ability, moves
+    g_item, g_ability, g_moves, _ = world
+    if item in ("", "unknown_item") and mon.item == "unknown_item":
+        item = g_item
+    ability = ability or g_ability
+    have = {m.id for m, _ in moves}
+    for mid in g_moves:
+        if len(moves) >= 4:
+            break
+        mv = _move(mid)
+        if mv is not None and mv.id not in have:
+            moves.append((mv, True))
+            have.add(mv.id)
+    return item, ability, moves
+
+
 def _dmg(battle: DoubleBattle, att: Pokemon, move: Move, dfn: Pokemon | None, att_spe: float,
          dfn_spe: dict[int, float], ally: Pokemon | None, dfn_side: list[Pokemon]) -> list[float]:
     from ai_vgc.nn.rules import foe_blocked
@@ -207,8 +267,20 @@ def _dmg(battle: DoubleBattle, att: Pokemon, move: Move, dfn: Pokemon | None, at
     if Field.TRICK_ROOM in battle.fields:
         faster = not faster
     try:
-        blocked = move.target in HITS_FOES and \
-            foe_blocked(battle, att, ally, dfn_side, move, dfn, move.target in SINGLE_TARGET) is not None
+        if battle.__dict__.get("_guess"):
+            # Set guessing on: unshown opposing abilities count as their usual one (Armor Tail,
+            # Lightning Rod, Good as Gold...), as `apply_rules` already does for our own moves.
+            from ai_vgc.nn.rules import _GUESS
+
+            token = _GUESS.set(True)
+            try:
+                blocked = move.target in HITS_FOES and \
+                    foe_blocked(battle, att, ally, dfn_side, move, dfn, move.target in SINGLE_TARGET) is not None
+            finally:
+                _GUESS.reset(token)
+        else:
+            blocked = move.target in HITS_FOES and \
+                foe_blocked(battle, att, ally, dfn_side, move, dfn, move.target in SINGLE_TARGET) is not None
     except KeyError:  # pseudo-moves with no data entry
         blocked = False
     row = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, float(faster), 0.0, float(blocked)]
@@ -253,17 +325,19 @@ def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
         slot = 2 * side + (0 if a else 1) if (a or b) else None
         if slot is not None:
             act_tok[slot] = i
-        tok_cat[i] = [v["species"].get(mon.species, 0), v["items"].get(mon.item or "", 0),
-                      v["abilities"].get(mon.ability or "", 0)]
+        item, ability, moves = _hidden(battle, mon, side == 0)
+        tok_cat[i] = [v["species"].get(mon.species, 0), v["items"].get(item, 0), v["abilities"].get(ability, 0)]
         tok_num[i] = _mon_num(mon, side == 0, a, b)
         opp = foe_act if side == 0 else our_act
         own = our_act if side == 0 else foe_act
         ally = own[1] if a else own[0]
         ally = ally if ally is not None and not ally.fainted else None
         opp_live = [m for m in opp if m is not None and not m.fainted]
-        for k, move in enumerate(_moves(mon)):
+        for k, (move, guessed) in enumerate(moves):
             mv_cat[i, k] = v["moves"].get(move.id, 0)
-            mv_dyn[i, k] = [move.current_pp / max(move.max_pp, 1), float(move.is_last_used)]
+            # A guessed move (closed sheets, `_hidden`) has no PP to show: -1 marks it as a guess.
+            mv_dyn[i, k] = [-1.0, 0.0] if guessed else [move.current_pp / max(move.max_pp, 1),
+                                                       float(move.is_last_used)]
             if slot is not None:
                 for j in range(2):
                     dmg[slot, k, j] = _dmg(battle, mon, move, opp[j], spe[id(mon)], spe, ally, opp_live)

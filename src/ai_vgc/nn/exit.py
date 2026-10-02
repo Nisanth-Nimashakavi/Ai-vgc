@@ -50,6 +50,7 @@ def gen(args: argparse.Namespace) -> None:
     from ai_vgc.nn.search import SearchPlayer
     from ai_vgc.showdown import account, ensure_server
     from ai_vgc.teams import TEAMS_DIR, RandomPoolTeambuilder
+    from poke_env.teambuilder import ConstantTeambuilder
 
     torch.set_num_threads(1)
     k = args.search_k
@@ -77,11 +78,17 @@ def gen(args: argparse.Namespace) -> None:
     common = dict(max_concurrent_battles=args.concurrency, accept_open_team_sheet=True, log_level=40,
                   server_configuration=ServerConfiguration(f"ws://localhost:{args.port}/showdown/websocket",
                                                            "https://play.pokemonshowdown.com/action.php?"))
-    me = Recorder(args.model, args.rating, True, account_configuration=account("nnx"), team=teams(),
-                  opp_model=args.opp_model, fmt=args.format, teams_dir=args.teams or TEAMS_DIR,
+    common["accept_open_team_sheet"] = not args.closed_sheets
+    mine = ConstantTeambuilder(args.my_team.read_text()) if args.my_team else teams()
+    sets_dir = str(args.teams or TEAMS_DIR)
+    me = Recorder(args.model, args.rating, True, account_configuration=account("nnx"), team=mine,
+                  opp_model=args.opp_model, fmt=args.format, teams_dir=sets_dir,
                   showdown=args.showdown or "pokemon-showdown", k=k, opp_k=args.search_opp_k,
-                  seeds=args.search_seeds, prior=args.search_prior, **common)
+                  seeds=args.search_seeds, prior=args.search_prior, worlds=args.search_worlds,
+                  depth=args.search_depth, **common)
     me.on_search = record
+    me.speed_inference, me.damage_inference = args.speed_inference, args.damage_inference
+    me.set_guess = (sets_dir, args.format) if args.set_guess else None
     opps = args.opponent.split(",")
     t = time.time()
     try:
@@ -90,6 +97,7 @@ def gen(args: argparse.Namespace) -> None:
             if name.startswith("nn:"):
                 opp = NNPlayer(name[3:], args.rating, account_configuration=account("nnxo"), team=teams(),
                                battle_format=args.format, **common)
+                opp.speed_inference, opp.damage_inference = args.speed_inference, args.damage_inference
             else:
                 opp = SimpleHeuristicsPlayer(account_configuration=account("heur"), team=teams(),
                                              battle_format=args.format, **common)
@@ -152,9 +160,17 @@ def losses(model, ref, b: dict[str, torch.Tensor], args) -> dict[str, torch.Tens
         rpa = F.log_softmax(masked(ref.slot_logits(renc, b, 0), ma), -1)
         rpb = F.log_softmax(masked(ref.slot_logits(renc, b, 1, a0), mb0), -1)
     kl = ((lpa.exp() * (lpa - rpa)).sum(-1) + (lpb0.exp() * (lpb0 - rpb)).sum(-1)).mean()
-    vf = F.binary_cross_entropy_with_logits(model.value(enc[0])[:, 0].float(), b["won"].float())
+    # Value target: the game result, or (--search-value lam) a mix with search's value of the
+    # position, its best candidate's expected value: a far less noisy label than one game's outcome.
+    won = b["won"].float()
+    sv = torch.nan_to_num(b["cand_v"].float(), nan=-1.0).max(1).values.clamp(0, 1)
+    vt = args.search_value * sv + (1 - args.search_value) * won
+    vlogit = model.value(enc[0])[:, 0].float()
+    vf = F.binary_cross_entropy_with_logits(vlogit, vt)
     hit = joint.masked_fill(~ok, -1e9).argmax(1) == tgt.argmax(1)
-    return {"loss": ce + args.kl_coef * kl + args.vf_coef * vf, "ce": ce, "kl": kl, "vf": vf,
+    pol = 0.0 if args.value_only else 1.0
+    return {"loss": pol * (ce + args.kl_coef * kl) + args.vf_coef * vf, "ce": ce, "kl": kl, "vf": vf,
+            "v_err": (torch.sigmoid(vlogit) - sv).abs().mean(),
             "agree": hit.float().mean(),
             # How often the policy now makes search's override itself (0 for the policy search ran on).
             "overrides": (hit & over).float().sum() / over.float().sum().clamp(min=1)}
@@ -180,7 +196,8 @@ def train(args: argparse.Namespace) -> None:
     for p in ref.parameters():
         p.requires_grad_(False)
     model.eval()  # no dropout, as in rl.py
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
+    params = model.value.parameters() if args.value_only else model.parameters()
+    opt = torch.optim.AdamW(params, lr=args.lr, weight_decay=0.0)
 
     def batch(idx):
         return {key: v[idx].to(dev) for key, v in data.items()}
@@ -238,6 +255,13 @@ def main() -> None:
     g.add_argument("--search-opp-k", type=int, default=6)
     g.add_argument("--search-seeds", type=int, default=2)
     g.add_argument("--search-prior", type=float, default=0.1)
+    g.add_argument("--search-worlds", type=int, default=1)
+    g.add_argument("--search-depth", type=int, default=1, choices=[1, 2])
+    g.add_argument("--closed-sheets", action="store_true")
+    g.add_argument("--my-team", type=Path, default=None, help="our side always plays this team file")
+    g.add_argument("--speed-inference", action="store_true")
+    g.add_argument("--damage-inference", action="store_true")
+    g.add_argument("--set-guess", action="store_true")
     t = sub.add_parser("train", help="fine-tune the policy towards the recorded search choices")
     t.add_argument("--init", default="data/models/archive/mb-bo3-rnad-v3.pt")
     t.add_argument("--data", type=Path, required=True, help="folder of gen .npz files (searched recursively)")
@@ -253,6 +277,10 @@ def main() -> None:
     t.add_argument("--vf-coef", type=float, default=0.5)
     t.add_argument("--val-frac", type=float, default=0.05)
     t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--search-value", type=float, default=0.0,
+                   help="value target = this x search's value of the position + rest x the game result")
+    t.add_argument("--value-only", action="store_true",
+                   help="train only the value head (search's values as targets, with --search-value)")
     args = ap.parse_args()
     gen(args) if args.cmd == "gen" else train(args)
 

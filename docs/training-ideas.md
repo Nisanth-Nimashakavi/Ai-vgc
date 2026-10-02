@@ -767,3 +767,89 @@ pool each game.
   hardly predicts their next move beyond what the board already says. `nn_v4_ser_mt` is no worse,
   so it can be the opponent model, but this isn't where games 2–3 are lost.
 - Known gaps: no speed or bulk bounds yet, and a back Pokémon that never switched in stays unseen.
+
+## Fixes (2026-09-30)
+
+- [x] poke-env crashed on a "[from] move: X" message when X wasn't among the user's known moves (seen with Round, and possible for any unrevealed move with closed sheets): `KeyError: 'round'`. The crash hung shard 9 of the whole-pool round robin 406880 at 1335 of 4453 pairs. `ai_vgc/showdown.py` now records X as known before poke-env parses the message. It's imported by player, rl, team_rr, team_test, team_rank and preview, so every script gets the fix.
+
+## Hand-picked specialist teams (2026-09-30)
+
+- [x] 10 teams picked from human play (pastes: `docs/specialist-teams.md`): MC408, P1, MC354, MC222, U1, the best-ranked team-2 version (MC255/256/271/272/312/403), MC301, U4, MC388, U6. U1/U4/U6 rebuilt from open sheets in human Bo3 logs (EVs estimated); P1 from pokepast.es/c7e82f90c1bd0922 (Annihilape set to Jolly).
+- [ ] Baseline round robin 409714 (v6 pilots all, CTS Bo1, 100 games per pair): MC408 71.8% [69, 75]; rest of the table still to record.
+- [x] Stage 1 409711 (9 teams, v7, 1–1.8 h each) → stage 2 409712 (v8, 30–55 min each) → v7-vs-v8 round robin 409713: all completed 2026-10-01. Team 2 = MC272.
+- [x] v7 vs v8 round robin 409713: v8 wins 8379/10000 = 83.8% overall, but that's v8 playing the exact v7 opponents it trained against. Same-team mirrors (v8 never trained against its own team's v7) are the fairer view: v7 took 42/100 on average (MC222 33, MC408 34, MC388 35, U1 38, U4 39, MC354 44, P1 45, MC272 48, MC301 50, U6 54), so v8 ~58%.
+  v8 ranking: MC408 74.9%, MC388 71.2%, MC272 70.4%, U1 70.0%, MC301 69.1%, U4 67.5%, MC222 66.0%, P1 65.9%, U6 62.1%, MC354 60.8%.
+- [x] Fair check v8 vs v7 vs v6 (whole pool, all-bo3-bc-v2 pilots, --closed-sheets, 3024 games each):
+
+  | team | v6 | v7 | v8 |
+  |---|---|---|---|
+  | MC408 | 89.9 [88.8, 90.9] | 95.3 [94.4, 96.0] | 94.2 [93.3, 95.0] |
+  | MC388 | 87.9 [86.7, 89.0] | 91.3 [90.3, 92.3] | 92.3 [91.3, 93.2] |
+  | MC272 | 90.2 [89.1, 91.2] | 92.4 [91.4, 93.3] | 92.0 [91.0, 92.9] |
+
+  v8 is no better than v7 here: stage 2's 84% / ~58% in the round robin was learning to beat the other specialists, not the field. v7 stays the ladder model; MC408 v7 (95.3) and MC358 v7 (96.0) are the best confirmed. Fixes on the way: `--workers 16 --concurrency 16` (three jobs per node hit the process limit at 32 workers; ilab rejects --cpus-per-task).
+
+## CTS Bo1 specialists, first batch (2026-10-01)
+
+- [x] v7 round robin (10 old top teams, each piloted by its own v7): MC378 65.7%, MC358 61.9%, MC408 58.8%, MC371 51.7%, MC41 50.8%, MC147 50.3%, MC196 47.8%, MC4 44.3%, MC321 42.3%, MC337 26.4%.
+- [x] v6 vs v7 round robin 413520 (v6 linked as `mc-cts-rnad-v6-<team>.pt`, `GEN="v6 v7"`): v7 wins 8251/10000 = 82.5% [81.8, 83.2]. Same-team mirrors, v6's series out of 100: MC321 8, MC358 12, MC378 14, MC147 15, MC337 15, MC196 16, MC408 16, MC4 27, MC41 33, MC371 47.
+  The gap is inflated: stage 1 trains against v6 itself (the `bc` opponent), and last time that kind of result shrank from +25 to +7 on a fair test.
+- [x] Fair check: `team_test --closed-sheets`, pool piloted by all-bo3-bc-v2 (never trained against), 378 teams x 8 games:
+
+  | team | v6 | v7 specialist |
+  |---|---|---|
+  | MC358 | 91.0 [90.0, 92.0] | 96.0 [95.2, 96.6] |
+  | MC408 | 90.0 [88.8, 91.0] | 95.5 [94.7, 96.2] |
+  | MC378 | 90.8 [89.7, 91.7] | no result (log had no overall line) |
+
+  Specialists are a real gain of about +5 points. all-bo3-bc-v2 is an open-sheet imitation model, so it's weak in CTS and every number is high.
+
+## 19-team v7 round robin (2026-10-01)
+
+- [x] Both specialist batches (19 teams, MC408 in both), each piloted by its own v7, CTS Bo1, 100 series per pair, 1800 each: U1 65.8, MC378 64.6, MC408 57.8, MC301 57.6, MC371 56.3, MC196 53.2, U6 52.8, MC147 52.7, U4 52.6, MC41 52.3, MC358 50.0, MC4 50.0, P1 49.3, MC321 43.4, MC388 40.7, MC272 39.5, MC222 39.2, MC354 37.4, MC337 34.8.
+- Specialist-vs-specialist strength (U1, MC378) and strength against the field (MC408, MC358 in the fair test) don't line up. Ladder is the field, so MC408 v7 stays the pick.
+- [x] Fair test (whole pool, all-bo3-bc-v2, --closed-sheets): MC378 v7 96.4% [95.6, 97.0] (v6 90.8, so +5.6), U1 v7 87.0% [85.8, 88.2]. MC378 v7 is best on both tests, so it becomes the ladder model. U1 beats specialists but not the field.
+
+## Stronger search (2026-10-01)
+
+- [x] Bug: search runs in worker threads, several battles at once, all sharing one sim bridge process. Requests interleaved on the pipe (JSONDecodeError) and a timeout in one thread killed the bridge under another, so most turns fell back to the plain policy. Local CTS check before the fix: 1 searched decision, 73 by policy; after: 59 searched, 0 by policy. `Bridge` now holds a lock per request. Any search result measured with `--concurrency` > 1 since the threads went in (the CTS search numbers of 2026-09-30) mostly measured the plain policy.
+  Ladder plays one game at a time, so only one search runs at once there: ladder play was not affected.
+- [x] Timing, one game at a time (as on ladder), MC378 v7, 4 sets guesses: k6/opp6/seeds2 ~2.5 s per turn, k10/opp10/seeds2 3.2 s. Showdown's timer allows far more.
+- [x] Baseline (laptop), MC378 v7 plain vs mc-cts-opp-v6 on the reg_mc pool, CTS: 749/1000 = 74.9% [72.1, 77.5].
+- [x] ilab search sizes vs the same opponent, 600 games each (±3.5): k6/opp6/seeds2 76.0% (416246), k10/opp10/seeds2 73.8% (416247), k10/opp10/seeds4 77.0% (462/600, 416248). No search: 74.9%. One-turn search adds ~nothing against a human-trained closed-sheet opponent; bigger search doesn't help either, except possibly more seeds.
+- [x] Two-turn lookahead built (`--search-depth 2`). The bridge keeps each turn-1 playout that ends on an ordinary move turn (no faint, so no forced switch) and returns our side's request for it. Python parses that request into the copied battle, takes the policy's top `--search-k2` (3) replies and the opponent model's top `--search-opp-k2` (3), and plays turn 2 (`--search-seeds2` 1 each). A turn-1 outcome is worth our best reply's expected value; outcomes that end the game, force a switch or can't be rebuilt keep the one-turn value. The bridge lock is held across both requests.
+  Local check (MC378 v7, CTS, 4 sets guesses, one game at a time): ~7–11 s per turn, 0 turn-1 fallbacks, 62% of turn-1 playouts expanded, 1.2% of turn-2 simulations retargeted or defaulted.
+- [x] ilab 416396: depth 2 won 441/592 = 74.5% against mc-cts-opp-v6 (depth 1 76.0%, no search 74.9%, all ±3.5). No gain from looking a turn further.
+- [x] Idea 2, --rating sweep (laptop, MC378 v7 no search vs mc-cts-opp-v6 at --opponent-rating 1450, CTS, 1000 games each): 1200 69.8% [66.9, 72.6], 1450 71.4% [68.5, 74.1], 1700 72.9% [70.1, 75.6], 2000 73.6% [70.8, 76.2]. Training ratings: median 1226, p99 1589, so 1700 is out of range for the imitation data, but RL trained at 1700 and the model is used to it.
+
+## Team-level set guesses and human-like training (2026-10-01)
+
+- [x] `scripts/team_library.py <format>` collects whole teams from open sheets in human logs → `data/teams/team_library_<format>.json` (Reg M-C: 11,552 distinct teams from 44,804 sheets; 8,156 seen more than once).
+- [x] Search's closed-sheet guesses (`worlds`) first look for known teams with the same six species as the opponent's preview (or five of six, at a quarter weight) that agree with everything revealed; those get 80% of the probability (`--search-team-mass`, 0 turns it off), per-species usage the rest. Pool team files are included with their stat points.
+- [x] Held-out check (Bo3 sheets split by series, guess before anything is revealed): exact set 38.4% → 64.8%, item 69.7% → 84.6%, moves right 3.22 → 3.56 of 4; 77% of teams have a 6- or 5-of-6 match.
+- [x] ilab 416999: search with team guesses vs mc-cts-opp-v6: 448/600 = 74.7% (old guesses 76.0%, no search 74.9%). Pool opponents are in the library, so search had close to their exact sets and still gained nothing: set guessing isn't what limits search in CTS. Most likely the value head (its judgement of each simulated position) is. Team guesses stay on (harmless, more accurate).
+- [x] Idea 3: `rl.py --human MODEL` adds an imitation-of-humans opponent; `STAGE=h` in nn_team_rl.sh trains stage 1 with mc-cts-opp-v6 as 30% of opponents → `mc-cts-rnad-v7h-<team>.pt` (MC378: 416998).
+  Laptop, MC378, CTS, 2000 games each, no search:
+
+  | opponent | v7 | v7h |
+  |---|---|---|
+  | mc-cts-opp-v6 (v7h trained against it) | 73.0 [71.1, 74.9] | 76.3 [74.4, 78.1] |
+  | all-bo3-bc-v2 (neither trained against it) | 96.0 [95.0, 96.8] | 95.2 [94.1, 96.0] |
+
+  The +3.3 is against the opponent v7h trained on, and it vanishes against the other one: v7h learned mc-cts-opp-v6's habits, not general human play. No clear gain; v7 stays the ladder model. Only ladder can tell whether those habits are human habits.
+
+## Speed inference (2026-10-02)
+
+- [x] `src/ai_vgc/speed.py`: reads each turn's move order. When one of ours and one of theirs act in the same priority bracket, their effective Speed is bounded by ours (reversed under Trick Room); dividing out stat stages, Tailwind, paralysis, weather abilities, a known Scarf and Unburden bounds their Speed stat (Champions L50: trunc((base + points + 20) × nature)). Skips anything a hidden ability, item or mid-turn Speed change could explain; a possible Scarf only loosens their moving first.
+- [x] Feature hook: `calc.effective_speed` uses the bounded estimate (the old max-neutral guess, moved inside the bounds; a Scarf when nothing else explains it) only when the battle's `_spd_on` is set (`NNPlayer.speed_inference`, `player --speed-inference`, `rl.py --speed-inference`), so existing models are unchanged. Search's simulated turns don't feed it.
+- [x] Check against true stats (local games, MC378 v7 vs pool teams): 1,259 observations on 691 Pokemon over 400 games, 0 wrong bounds, Scarf inferred right 5/5. It narrows modestly: 85% of the possible Speed range left on average, estimate error 18.5 → 16.1 points.
+- Bugs found on the way: poke-env's Pokemon has `__slots__` (flags must live on the battle), and the Champions Mega-Z formes keep their base Speed in poke-env's view.
+- [ ] RL: `STAGE=s` (v7 → v7s, 60 iters, speed inference on). Test v7s (with) against v7 (without) vs mc-cts-opp-v6, then all-bo3-bc-v2.
+
+## Closed-sheet features and search-value training (2026-10-02)
+
+- [x] **Damage features were empty in closed-sheet play.** poke-env's damage calculator needs every stat of both Pokemon; without a team sheet the opponent's are never known, so `calc.damage_pct` returned None for every move into or from them and all damage/KO/effectiveness features were zero. Open-sheet training data has them (sheet stats), so every CTS model (v6, v7, specialists) has been playing without the damage features it learned on. Local check: 437 of 437 damage calcs failed before; with the fix, about half the dmg rows carry damage.
+- [x] `src/ai_vgc/bulk.py` (`--damage-inference`): opposing stats estimated from MunchStats spreads (+ the set guess's spread, + plain archetypes); each clean direct hit between one of ours and one of theirs down-weights candidates whose damage range misses the HP actually lost. The narrowing helps little (stat error 40.8 → 40.2 on narrowed Pokemon); the fill-in is the point.
+- [x] Set guesses in the features (`--set-guess`): unrevealed opposing items, abilities and move slots filled in from search's best guess (known whole teams, else usage); guessed moves marked with PP -1. The encoder's "blocked" feature then counts their usual ability (Armor Tail, Lightning Rod, Good as Gold). At game end: guessed moves right 79–82%, items 78–87%. ~3 ms per encode.
+- [x] Search-value training: `exit gen` takes the CTS options (closed sheets, our team, worlds, the feature flags); `exit train --value-only --search-value LAM` trains only the value head towards LAM × search's value of the position (its best candidate) + the rest × the game result.
+- [ ] ilab: `scripts/slurm/value_pipeline.sh` (TEAM=MC378): STAGE=f RL (v7 → v7f, all three features, 100 iters) → 1,600 search games of v7f vs mc-cts-opp-v6 → value training → v7fv. Then test v7f (no search) and v7fv (with search) against v7.

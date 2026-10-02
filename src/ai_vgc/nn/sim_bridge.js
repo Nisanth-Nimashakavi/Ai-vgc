@@ -140,14 +140,19 @@ function start(req) {
   })};
 }
 
-function run(req) {
-  if (req.start) return start(req);
-  const {json, sides, battle} = build(req.state);
-  if (req.dump) return {dump: dump(battle)};
+// Two-turn search: with "keep": true, every playout that ends on an ordinary move turn for both
+// sides (nobody fainted, so no forced switches) is kept here under an id, and its result gets
+// "next": {"id", "request"} (our side's request, as Showdown would send it). A later request
+// {"cont": [{"id", "pairs", "seeds"}, ...]} plays turn 2 from those kept positions
+// -> {"conts": [[results], ...]}. Kept positions last until the next "state" request.
+let kept = new Map();
+let keptSides = null;
+
+function play(json, sides, pairs, seeds, keep) {
   const ch = +sides.us.slice(1);
   const results = [];
-  for (const [us, them] of req.pairs) {
-    for (const seed of req.seeds) {
+  for (const [us, them] of pairs) {
+    for (const seed of seeds) {
       const b = State.deserializeBattle(JSON.parse(json));
       b.prng = new PRNG([seed, 7, 11, 13]);
       b.send = () => {};
@@ -159,10 +164,32 @@ function run(req) {
       }
       const lines = extractChannelMessages(b.log.join('\n'), [ch])[ch];
       const winner = b.ended ? (b.winner === 'us' ? 'us' : b.winner === 'them' ? 'them' : 'tie') : null;
-      results.push({lines, winner, err});
+      const r = {lines, winner, err};
+      if (keep && !b.ended && !err) {
+        const mine = b.getSide(sides.us).activeRequest, theirs = b.getSide(sides.them).activeRequest;
+        if (mine && theirs && !mine.wait && !mine.forceSwitch && !theirs.wait && !theirs.forceSwitch) {
+          b.log = [];
+          const id = kept.size;
+          kept.set(id, JSON.stringify(State.serializeBattle(b)));
+          r.next = {id, request: mine};
+        }
+      }
+      results.push(r);
     }
   }
-  return {results};
+  return results;
+}
+
+function run(req) {
+  if (req.start) return start(req);
+  if (req.cont) {
+    return {conts: req.cont.map(c => kept.has(c.id) ? play(kept.get(c.id), keptSides, c.pairs, c.seeds, false) : [])};
+  }
+  const {json, sides, battle} = build(req.state);
+  if (req.dump) return {dump: dump(battle)};
+  kept = new Map();
+  keptSides = sides;
+  return {results: play(json, sides, req.pairs, req.seeds, !!req.keep)};
 }
 
 const rl = readline.createInterface({input: process.stdin});

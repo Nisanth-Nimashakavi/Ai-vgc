@@ -23,3 +23,4 @@ data/team_rr/
 data/team_tests/
 *.tmp
 dist/
+.ipynb_checkpoints/

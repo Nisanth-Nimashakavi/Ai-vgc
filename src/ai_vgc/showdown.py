@@ -13,8 +13,32 @@ import uuid
 from pathlib import Path
 
 from poke_env import AccountConfiguration
+from poke_env.battle.abstract_battle import AbstractBattle
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _patch_from_move() -> None:
+    """poke-env looks up a "[from] move: X" message's move X in the user's known moves and raises
+    KeyError when X isn't there (Round's follow-up, or an unrevealed move with closed sheets), which
+    kills the whole player. Record X as known before the message is parsed."""
+    parse = AbstractBattle.parse_message
+    if getattr(parse, "_from_move_patch", False):
+        return
+
+    def parse_message(self, split_message):
+        if len(split_message) > 3 and split_message[1] == "move" and split_message[-1].startswith("[from] move: "):
+            try:
+                self.get_pokemon(split_message[2])._add_move(split_message[-1].split(": ")[-1])
+            except Exception:
+                pass
+        return parse(self, split_message)
+
+    parse_message._from_move_patch = True
+    AbstractBattle.parse_message = parse_message
+
+
+_patch_from_move()
 
 
 def wilson(wins: int, n: int, z: float = 1.96) -> tuple[float, float]:

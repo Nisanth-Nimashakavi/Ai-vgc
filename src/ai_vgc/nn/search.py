@@ -29,11 +29,13 @@ Search only runs on ordinary move turns; forced switches and team preview use th
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import random
 import select
 import subprocess
+import threading
 import time
 from collections import Counter
 from functools import cache
@@ -107,6 +109,7 @@ def _species(mon: Pokemon) -> str:
     return mon.species
 
 
+TEAM_MASS = 0.8  # share of the guesses given to matching whole teams (0: per-species guesses only)
 USAGE_DIR = Path("data/teams")  # set_usage_<format>.json, built by `python -m ai_vgc.nn.search --usage`
 
 
@@ -267,12 +270,128 @@ def munch_sets(base: str, top: int = 24) -> Counter:
     return Counter(dict(out.most_common(top)))
 
 
+COSMETIC = ("Four", "Three", "Masterpiece", "Artisan", "Antique")  # formes that play the same
+
+
+def _core(species: str) -> str:
+    """Species id for matching teams: a Mega counts as the forme it Mega Evolves from (Floette-Mega
+    as Floette-Eternal) and cosmetic formes as the base species, since sheets and team files write
+    them either way."""
+    entry = _pokedex().get(species, {})
+    forme = str(entry.get("forme", ""))
+    if forme.startswith("Mega"):
+        return to_id_str(entry.get("battleOnly") if isinstance(entry.get("battleOnly"), str) else entry["baseSpecies"])
+    if forme in COSMETIC:
+        return to_id_str(entry["baseSpecies"])
+    return species
+
+
+@cache
+def team_library(teams_dir: str, fmt: str = "") -> dict[frozenset, list[tuple[dict, float]]]:
+    """Whole teams, indexed by their six species and by every five of them: {key: [(team, weight)]},
+    a team being {species: (item, ability, moves, spread)}. Team files in the pool count once and
+    carry their stat points; teams from human open sheets (`USAGE_DIR/team_library_<fmt>.json`,
+    built by scripts/team_library.py) count as often as they were seen, with their nature but no
+    stat points (spread None, or MunchStats' likeliest spread for that nature)."""
+    teams: list[tuple[dict, float]] = []
+    core, spread_for = cache(_core), {}
+    for f in sorted(Path(teams_dir).glob("*.txt")):
+        mons = Teambuilder.parse_showdown_team(f.read_text())
+        team = {core(to_id_str(m.species or m.nickname)):
+                (to_id_str(m.item or ""), to_id_str(m.ability or ""), frozenset(to_id_str(x) for x in m.moves),
+                 (tuple(m.evs or [0] * 6), m.nature or "Hardy")) for m in mons}
+        if len(team) == 6:
+            teams.append((team, 1.0))
+    path = USAGE_DIR / f"team_library_{fmt.removesuffix('bo3')}.json"
+    if fmt and path.exists():
+        for rows, n in json.loads(path.read_text()):
+            team = {}
+            for sp, item, ability, moves, nature in rows:
+                base = core(sp)
+                if (base, nature) not in spread_for:
+                    spread_for[base, nature] = next((c for c, _ in spread_prior(base, 50) if c[1] == nature),
+                                                    None) if nature else None
+                team[base] = (item, ability, frozenset(moves), spread_for[base, nature])
+            if len(team) == 6:
+                teams.append((team, float(n)))
+    index: dict[frozenset, list[tuple[dict, float]]] = {}
+    for team, w in teams:
+        key = frozenset(team)
+        index.setdefault(key, []).append((team, w))
+        for sp in team:
+            index.setdefault(key - {sp}, []).append((team, w))
+    return index
+
+
+def team_worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+    """Guesses at the opponent's hidden sets from whole known teams: teams with the same six
+    species as their team preview (or five of the six, at a quarter of the weight) whose sets
+    agree with everything revealed so far (moves, item, ability). Each guess is {name: (item,
+    ability, moves, spread)} for the Pokemon the team covers, with its share of the matching
+    weight; up to `n`, most likely first. [] when no known team fits."""
+    preview = {_core(to_id_str(m.species)) for m in battle.teampreview_opponent_team}
+    if len(preview) != 6:
+        return []
+    lib = team_library(teams_dir, fmt)
+    revealed = {}
+    for mon in battle.opponent_team.values():
+        species = _species(mon)
+        abilities = _pokedex()[species]["abilities"]
+        ability = to_id_str(abilities["0"]) if len(abilities) == 1 else mon.ability or ""
+        revealed[_core(species)] = (mon.name, _item(mon), ability, list(mon.moves)[:4])
+    cands: dict[tuple, float] = {}
+    keys = [(frozenset(preview), 1.0)] + [(frozenset(preview - {sp}), 0.25) for sp in preview]
+    for key, scale in keys:
+        for team, w in lib.get(key, []):
+            if set(team) != preview and len(set(team) & preview) < 5:
+                continue
+            ok = True
+            for sp, (_, item, ability, moves) in revealed.items():
+                if sp not in team:
+                    continue
+                t_item, t_ability, t_moves, _ = team[sp]
+                if (item and item != t_item) or (ability and ability != t_ability) or not set(moves) <= t_moves:
+                    ok = False
+                    break
+            if ok:
+                sig = tuple(sorted((sp, *team[sp][:2], tuple(sorted(team[sp][2])), team[sp][3]) for sp in team))
+                cands[sig] = cands.get(sig, 0.0) + w * (1.0 if set(team) == preview else scale)
+    if not cands:
+        return []
+    out = []
+    total = sum(cands.values())
+    for sig, w in sorted(cands.items(), key=lambda c: -c[1])[:n]:
+        world = {}
+        for sp, item, ability, moves, spread in sig:
+            if sp in revealed:
+                name, _, _, seen = revealed[sp]
+                world[name] = (item, ability, (seen + sorted(set(moves) - set(seen)))[:4], spread)
+        out.append((world, w / total))
+    return out
+
+
 def worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
     """Up to `n` guesses at the opponent's hidden sets, {name: (item, ability, moves, spread)},
     each with its probability (the product over their Pokemon, renormalised over the ones kept).
     Sets come from `set_posterior`; spreads (stat points and nature, which no team sheet shows)
     from `spread_prior`, or None to use the team pool's. The most likely of both for every
-    Pokemon comes first; the rest are sampled."""
+    Pokemon comes first; the rest are sampled. When whole known teams match their team preview
+    (`team_worlds`), those guesses take `TEAM_MASS` of the probability."""
+    known = team_worlds(battle, teams_dir, n, fmt) if TEAM_MASS else []
+    if known:
+        mass, kt = TEAM_MASS, sum(p for _, p in known)
+        rest = worlds_by_species(battle, teams_dir, max(1, n - len(known)), fmt)
+        # Pokemon a team guess doesn't cover (5-of-6 matches) take the species guess's set.
+        filler = rest[0][0]
+        merged = [({**filler, **w}, mass * p / kt) for w, p in known] + [(w, (1 - mass) * p) for w, p in rest]
+        merged = sorted(merged, key=lambda c: -c[1])[:n]
+        total = sum(p for _, p in merged)
+        return [(w, p / total) for w, p in merged]
+    return worlds_by_species(battle, teams_dir, n, fmt)
+
+
+def worlds_by_species(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+    """`worlds` from each Pokemon's own set posterior (no team-level match)."""
     post = {}
     for mon in battle.opponent_team.values():
         species = _species(mon)
@@ -418,6 +537,10 @@ class Bridge:
     def __init__(self, showdown: str | Path = "pokemon-showdown", timeout: float = 60.0):
         self.showdown = showdown
         self.timeout = timeout
+        # Searches run in worker threads (SearchPlayer), several battles at once: without this, two
+        # requests interleave on the one pipe, replies get mixed up (JSONDecodeError) and a timeout
+        # in one thread kills the process under the other.
+        self.lock = threading.RLock()  # re-entrant: a two-turn search holds it across its requests
         self._start()
 
     def _start(self) -> None:
@@ -425,6 +548,10 @@ class Bridge:
                                      stdout=subprocess.PIPE, text=True, bufsize=1)
 
     def _ask(self, req: dict) -> dict:
+        with self.lock:
+            return self._ask_locked(req)
+
+    def _ask_locked(self, req: dict) -> dict:
         # A bridge that died (e.g. killed on a busy node) is restarted rather than failing
         # every later search in the run.
         if self.proc.poll() is not None:
@@ -445,8 +572,16 @@ class Bridge:
             raise RuntimeError(out["error"])
         return out
 
-    def run(self, state: dict, pairs: list[tuple[str, str]], seeds: list[int]) -> list[dict]:
-        return self._ask({"state": state, "pairs": pairs, "seeds": seeds})["results"]
+    def run(self, state: dict, pairs: list[tuple[str, str]], seeds: list[int], keep: bool = False) -> list[dict]:
+        """Play each pair once per seed. With `keep`, results that end on an ordinary move turn
+        carry "next" ({"id", "request"}) and the bridge keeps that position for `cont`."""
+        return self._ask({"state": state, "pairs": pairs, "seeds": seeds, "keep": keep})["results"]
+
+    def cont(self, conts: list[dict]) -> list[list[dict]]:
+        """Turn 2 from positions kept by the last `run(..., keep=True)`: each item is
+        {"id", "pairs", "seeds"}. Hold `self.lock` across both calls, or another search's
+        `run` can replace the kept positions in between."""
+        return self._ask({"cont": conts})["conts"]
 
     def dump(self, state: dict) -> list:
         """The position as the simulator rebuilt it, for checking against poke-env's."""
@@ -464,6 +599,7 @@ def after(battle: DoubleBattle, lines: list[str]) -> DoubleBattle:
     finally:
         battle.logger = logger
     b.logger = logger
+    b._spd_frozen = True  # a simulated turn says nothing about their real Speed
     for line in lines:
         split = line.split("|")
         if len(split) > 1 and split[1] not in IGNORE:
@@ -569,13 +705,88 @@ def values(model: Policy, battles: list[DoubleBattle], rating: float) -> np.ndar
     return torch.sigmoid(model.value(model.encode(b)[0])[:, 0]).numpy()
 
 
+def _second_turn(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: DoubleBattle,
+                 res: list[dict], world: dict | None, fmt: str, teams_dir: str, rating: float,
+                 k2: int, opp_k2: int, seeds2: list[int]) -> np.ndarray:
+    """Value of each turn-1 playout in `res` after a second turn: we pick our best reply among the
+    policy's `k2` candidates, the opponent mixes over their `opp_k2` likeliest. Playouts that end
+    the game, force a switch or failed keep their one-turn value (value head after turn 1)."""
+    v = np.full(len(res), np.nan)
+    nodes, conts = [], []
+    for i, r in enumerate(res):
+        if r["winner"]:
+            v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+            continue
+        b = after(battle, r["lines"])
+        if r.get("next"):
+            try:
+                b2 = copy.copy(b)
+                b2.parse_request(r["next"]["request"])
+                mask = apply_rules(b2, action_mask(b2))
+                obs = encode(b2, rating)
+                ours = our_candidates(model, obs | {"mask": mask}, mask, k2)
+                state = position(b2, fmt, teams_dir, world)
+                if ours and state is not None:
+                    choices = [DoublesEnv.action_to_order(a, b2, strict=False).message.removeprefix("/choose ")
+                               for a, _ in ours]
+                    theirs = opp_candidates(opp_model, b2, obs, state, opp_k2)
+                    nodes.append((i, b2, len(choices), [p for _, p in theirs]))
+                    conts.append({"id": r["next"]["id"], "pairs": [(c, t) for c in choices for t, _ in theirs],
+                                  "seeds": seeds2})
+                    continue
+            except Exception:  # a position poke-env can't take the request for: one-turn value
+                pass
+        nodes.append((i, b, 0, []))
+    _second_turn.expanded += len(conts)
+    _second_turn.nodes += len(res)
+    if conts:
+        outs = iter(bridge.cont(conts))
+    leaves, where = [], []
+    for n, (i, b, k, q) in enumerate(nodes):
+        if not k:
+            leaves.append(b)
+            where.append((n, None))
+            continue
+        out = next(outs)
+        _second_turn.sims += len(out)
+        _second_turn.errors += sum(bool(r["err"]) for r in out)
+        vals = np.full(len(out), np.nan)
+        for j, r in enumerate(out):
+            if r["winner"]:
+                vals[j] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+            else:
+                leaves.append(after(b, r["lines"]))
+                where.append((n, j))
+        nodes[n] = (i, b, k, q, vals)
+    if leaves:
+        lv = values(model, leaves, rating)
+        for (n, j), x in zip(where, lv):
+            if j is None:
+                v[nodes[n][0]] = x
+            else:
+                nodes[n][4][j] = x
+    for node in nodes:
+        if len(node) == 5:
+            i, _, k, q, vals = node
+            M2 = vals.reshape(k, len(q), len(seeds2)).mean(-1)
+            v[i] = float((M2 @ np.array(q)).max())
+    return v
+
+
+# turn-1 playouts searched a second turn / all; turn-2 simulations / those the bridge failed on
+_second_turn.expanded = _second_turn.nodes = _second_turn.sims = _second_turn.errors = 0
+
+
 def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: DoubleBattle,
            mask: np.ndarray, fmt: str, teams_dir: str, rating: float, k: int = 6, opp_k: int = 6,
-           seeds: int = 2, prior: float = 0.0, n_worlds: int = 1) -> tuple[np.ndarray, dict] | None:
+           seeds: int = 2, prior: float = 0.0, n_worlds: int = 1, depth: int = 1, k2: int = 3,
+           opp_k2: int = 3, seeds2: int = 1) -> tuple[np.ndarray, dict] | None:
     """(our chosen action, details) by one-turn search, or None when the position can't be
     rebuilt. With closed team sheets the opponent's hidden sets are guessed `n_worlds` ways
     (`worlds`); each candidate is scored in every world and the scores averaged by how likely
     each world is, so a play has to hold up against the sets they commonly run, not just one.
+    With `depth` 2, each turn-1 playout is scored after a second turn (`_second_turn`) instead
+    of by the value head right after turn 1.
     `M` and `q` in the details are the most likely world's."""
     obs = encode(battle, rating)
     ours = our_candidates(model, obs | {"mask": mask}, mask, k)
@@ -591,17 +802,24 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
             return None
         theirs = opp_candidates(opp_model, battle, obs, state, opp_k)
         pairs = [(c, t) for c in choices for t, _ in theirs]
-        res = bridge.run(state, pairs, seed_list)
-        v = np.full(len(res), np.nan)
-        live, idx = [], []
-        for i, r in enumerate(res):
-            if r["winner"]:
-                v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
-            else:
-                live.append(after(battle, r["lines"]))
-                idx.append(i)
-        if live:
-            v[idx] = values(model, live, rating)
+        if depth >= 2:
+            seeds2_list = [int(s) for s in np.random.randint(1, 2**30, seeds2)]
+            with bridge.lock:  # the kept turn-1 positions must survive until the turn-2 request
+                res = bridge.run(state, pairs, seed_list, keep=True)
+                v = _second_turn(model, opp_model, bridge, battle, res, world, fmt, teams_dir, rating,
+                                 k2, opp_k2, seeds2_list)
+        else:
+            res = bridge.run(state, pairs, seed_list)
+            v = np.full(len(res), np.nan)
+            live, idx = [], []
+            for i, r in enumerate(res):
+                if r["winner"]:
+                    v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+                else:
+                    live.append(after(battle, r["lines"]))
+                    idx.append(i)
+            if live:
+                v[idx] = values(model, live, rating)
         M = v.reshape(len(ours), len(theirs), seeds).mean(-1)
         q = np.array([p for _, p in theirs])
         value += w * (M @ q)
@@ -623,12 +841,14 @@ class SearchPlayer(NNPlayer):
 
     def __init__(self, *args, opp_model: Policy | str | Path | None = None, fmt: str,
                  teams_dir: str | Path, showdown: str | Path = "pokemon-showdown", k: int = 6,
-                 opp_k: int = 6, seeds: int = 2, prior: float = 0.0, worlds: int = 1, **kwargs):
+                 opp_k: int = 6, seeds: int = 2, prior: float = 0.0, worlds: int = 1, depth: int = 1,
+                 k2: int = 3, opp_k2: int = 3, seeds2: int = 1, **kwargs):
         super().__init__(*args, battle_format=fmt, **kwargs)
         self.opp_model = load_policy(opp_model) if isinstance(opp_model, (str, Path)) else opp_model
         self.fmt, self.teams_dir = fmt, str(teams_dir)
         self.bridge = Bridge(showdown)
         self.k, self.opp_k, self.seeds, self.prior, self.worlds = k, opp_k, seeds, prior, worlds
+        self.depth, self.k2, self.opp_k2, self.seeds2 = depth, k2, opp_k2, seeds2
         self.searched = self.fallbacks = self.countered = 0
         self.sims = self.sim_errors = 0  # simulated pairings, and those the bridge failed on
         self.search_time = 0.0
@@ -649,6 +869,9 @@ class SearchPlayer(NNPlayer):
 
     async def choose_move(self, battle: AbstractBattle) -> BattleOrder:
         assert isinstance(battle, DoubleBattle)
+        battle._spd_on = self.speed_inference
+        battle._guess = self.set_guess
+        battle._dmg_on = self.damage_inference
         self.attach_series(battle)
         if battle.battle_tag not in self.leads:
             self.leads[battle.battle_tag] = (
@@ -661,15 +884,20 @@ class SearchPlayer(NNPlayer):
             mask = apply_rules(battle, mask)
         t = time.time()
         try:
-            out = search(self.model, self.opp_model, self.bridge, battle, mask, self.fmt, self.teams_dir,
-                         self.rating, self.k, self.opp_k, self.seeds, self.prior, self.worlds)
+            # In a worker thread: a search can take seconds, and blocking the event loop that long
+            # starves the Showdown websocket's keepalive pings until the server drops the connection.
+            out = await asyncio.to_thread(search, self.model, self.opp_model, self.bridge, battle, mask,
+                                          self.fmt, self.teams_dir, self.rating, self.k, self.opp_k,
+                                          self.seeds, self.prior, self.worlds, self.depth, self.k2,
+                                          self.opp_k2, self.seeds2)
         except Exception as e:  # a position the bridge can't handle: play the policy
             self.logger.warning("search failed on turn %s: %r", battle.turn, e)
             out = None
             self.failed_in_a_row += 1
             if self.failed_in_a_row >= 3:  # e.g. it loaded a half-rebuilt dist/: start a fresh one
-                self.bridge.proc.kill()
-                self.bridge.proc.wait()
+                with self.bridge.lock:
+                    self.bridge.proc.kill()
+                    self.bridge.proc.wait()
                 self.failed_in_a_row = 0
         else:
             self.failed_in_a_row = 0

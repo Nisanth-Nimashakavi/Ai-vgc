@@ -74,10 +74,12 @@ _W: dict = {}
 
 
 def _init(ports: list[int], fmt: str, concurrency: int, rating: float, teams: str | None = None,
-          my_team: str | None = None, change_after_loss: bool = False, closed_sheets: bool = False) -> None:
+          my_team: str | None = None, change_after_loss: bool = False, closed_sheets: bool = False,
+          speed_inference: bool = False, set_guess: bool = False, damage_inference: bool = False) -> None:
     torch.set_num_threads(1)
     _W.update(ports=ports, fmt=fmt, concurrency=concurrency, rating=rating, teams=teams, my_team=my_team,
-              change_after_loss=change_after_loss, closed_sheets=closed_sheets)
+              change_after_loss=change_after_loss, closed_sheets=closed_sheets, speed_inference=speed_inference,
+              set_guess=set_guess, damage_inference=damage_inference)
 
 
 def _players(policy: str) -> dict:
@@ -121,6 +123,10 @@ def _players(policy: str) -> dict:
                                team=teams(), **common)
         _W["heuristic"] = SimpleHeuristicsPlayer(account_configuration=account("heur"),
                                                  team=teams(), **common)
+        for k in ("me", "self", "snap", "evalA", "evalB"):  # every model in the worker reads the same features
+            _W[k].speed_inference = _W.get("speed_inference", False)
+            _W[k].set_guess = (_W["teams"], _W["fmt"]) if _W.get("set_guess") and _W["teams"] else None
+            _W[k].damage_inference = _W.get("damage_inference", False)
     return _W
 
 
@@ -189,7 +195,7 @@ def _play(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, np.ndar
             w = _players(policy)
             me = w["me"]
         me.model.load_state_dict(_state(policy))
-        opp = w["snap" if kind in ("bc", "pool", "nash", "spec") else kind]
+        opp = w["snap" if kind in ("bc", "pool", "nash", "spec", "human") else kind]
         pool_team = None
         if kind == "spec":  # "model::team file": a specialist on its own team
             from poke_env.teambuilder import ConstantTeambuilder
@@ -377,7 +383,11 @@ def main() -> None:
     ap.add_argument("--rating", type=float, default=1700)
     ap.add_argument("--mix", default="self:0.5,bc:0.2,pool:0.15,heuristic:0.15",
                     help="opponent mix: self, bc (the --init policy), pool (snapshots, uniform), "
-                         "nash (snapshots, double-oracle weights), heuristic, spec (--specialists)")
+                         "nash (snapshots, double-oracle weights), heuristic, spec (--specialists), "
+                         "human (--human)")
+    ap.add_argument("--human", default=None, metavar="MODEL",
+                    help="opponent for `human` in --mix: an imitation model of human play (e.g. "
+                         "mc-cts-opp-v6, trained on human closed-sheet games), never trained against itself")
     ap.add_argument("--specialists", nargs="*", default=[], metavar="MODEL::TEAM",
                     help="opponents for `spec` in --mix: each a model that plays its own team file")
     ap.add_argument("--snapshot-every", type=int, default=10)
@@ -395,6 +405,12 @@ def main() -> None:
                     help="end an iteration's update early past this KL from the playing policy")
     ap.add_argument("--kl-coef", type=float, default=0.05, help="penalty for drifting from the --init policy")
     ap.add_argument("--value-warmup", type=int, default=3, help="first iterations train only the value head")
+    ap.add_argument("--damage-inference", action="store_true",
+                    help="closed sheets: every model's damage features use estimated opposing stats (ai_vgc.bulk)")
+    ap.add_argument("--set-guess", action="store_true",
+                    help="closed sheets: every model reads the opponent's unrevealed sets filled in with search's guess")
+    ap.add_argument("--speed-inference", action="store_true",
+                    help="every model in the games reads opposing Speed narrowed from turn order (ai_vgc.speed)")
     ap.add_argument("--closed-sheets", action="store_true",
                     help="every player declines open team sheets (Bo1 M-C, where they're optional): closed (CTS) games")
     ap.add_argument("--change-after-loss", action="store_true",
@@ -447,7 +463,8 @@ def main() -> None:
                                  initargs=(ports, args.format, args.concurrency, args.rating,
                                            str(args.teams) if args.teams else None,
                                            str(args.my_team) if args.my_team else None,
-                                           args.change_after_loss, args.closed_sheets)) as ex:
+                                           args.change_after_loss, args.closed_sheets, args.speed_inference,
+                                           args.set_guess, args.damage_inference)) as ex:
             if use_nash:
                 for p in pool:
                     if p not in meta["pool"]:
@@ -460,11 +477,13 @@ def main() -> None:
                 t0 = time.time()
                 jobs = []
                 for _ in range(math.ceil(args.games / args.job_games)):
-                    kinds = [k for k in mix if (k not in ("pool", "nash") or pool) and (k != "spec" or args.specialists)]
+                    kinds = [k for k in mix if (k not in ("pool", "nash") or pool) and (k != "spec" or args.specialists)
+                             and (k != "human" or args.human)]
                     kind = random.choices(kinds, [mix[k] for k in kinds])[0]
                     opp = (args.init if kind == "bc" else random.choice(pool) if kind == "pool"
                            else random.choices(meta["pool"], meta["nash"])[0] if kind == "nash"
-                           else random.choice(args.specialists) if kind == "spec" else None)
+                           else random.choice(args.specialists) if kind == "spec"
+                           else args.human if kind == "human" else None)
                     jobs.append((str(current), kind, opp, args.job_games))
                 parts, results = [], {}
                 for kind, data, mine in ex.map(_play, jobs):

@@ -5,7 +5,12 @@ entries: every pair plays --series matches, each side on its own team with its o
         --entries MC196=data/models/mc-bo3-rnad-v6-MC196.pt MC147=data/models/mc-bo3-rnad-v6-MC147.pt ... \\
         --format gen9championsvgc2026regmcbo3 --showdown pokemon-showdown-mc --series 50
 
-Both sides play as the ladder bot does: greedy moves, and in Bo3 games 2+ a preview sampled from
+`--all MODEL --teams data/teams/reg_mc` rates the whole pool with one model: 378 teams make 71,253
+pairs, so use a few games per pair (--series 4 gives each team about 1,500 games).
+
+Both sides sample their moves from the policy (--greedy: always the likeliest, as the ladder bot does;
+but then a pair replays nearly the same game every time, and one line decides the matchup 100-0),
+and in Bo3 games 2+ a preview sampled from
 the policy's top --vary-k, changing leads after a loss. --shard i/k plays only every k-th pair
 (for Slurm); each copy writes one CSV row per pair, and --sum adds CSVs up into a table.
 """
@@ -27,7 +32,8 @@ from ai_vgc.nn.player import NNPlayer, load_policy
 from ai_vgc.showdown import account, ensure_server, wilson
 
 
-def summarize(paths: list[Path]) -> None:
+def summarize(paths: list[Path], top: int = 40) -> None:
+    paths = [p for p in paths if p.name != "ranking.csv"]  # this function's own output, caught by *.csv
     rows = [r for p in paths for r in csv.DictReader(open(p))]
     games, series = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
     h2h: dict[tuple[str, str], float] = {}
@@ -41,12 +47,42 @@ def summarize(paths: list[Path]) -> None:
             series[t][1] += sn
         h2h[a, b], h2h[b, a] = sa / max(sn, 1), 1 - sa / max(sn, 1)
     teams = sorted(series, key=lambda t: -series[t][0] / max(series[t][1], 1))
-    print(f"{len(rows)} pairs")
+    print(f"{len(rows)} pairs, {len(teams)} teams" + (f"; the best {top}:" if len(teams) > top else ""))
     print(f"{'team':>8}  {'series':>16}  {'95% CI':>14}  {'games':>7}")
-    for t in teams:
+    for t in teams[:top]:
         (w, n), (gw, gn) = series[t], games[t]
         lo, hi = wilson(w, n)
         print(f"{t:>8}  {w:>4}/{n:<4} = {w / max(n, 1):5.1%}  [{lo:.0%}, {hi:.0%}]  {gw / max(gn, 1):6.1%}")
+    tags = sorted({t.split("@")[1] for t in teams if "@" in t})
+    if len(tags) > 1:  # the same teams under several pilots: each pilot's record against the others
+        print("\npilot vs pilot (all teams, mirrors included), series:")
+        for x in tags:
+            for y in tags:
+                if x == y:
+                    continue
+                w = n = 0
+                for r in rows:
+                    a, b = r["team_a"], r["team_b"]
+                    if a.endswith("@" + x) and b.endswith("@" + y):
+                        w, n = w + int(r["series_a"]), n + int(r["series"])
+                    elif a.endswith("@" + y) and b.endswith("@" + x):
+                        w, n = w + int(r["series"]) - int(r["series_a"]), n + int(r["series"])
+                lo, hi = wilson(w, n)
+                print(f"  {x} vs {y}: {w}/{n} = {w / max(n, 1):.1%}  [{lo:.1%}, {hi:.1%}]")
+        print("\nsame team, pilot vs pilot (mirror), series:")
+        for t in sorted({t.split("@")[0] for t in teams}):
+            for r in rows:
+                a, b = r["team_a"], r["team_b"]
+                if a.split("@")[0] == b.split("@")[0] == t:
+                    print(f"  {t}: {a.split('@')[1]} {r['series_a']}/{r['series']} vs {b.split('@')[1]}")
+    if len(teams) > 12:  # a head-to-head table this big is unreadable (and each cell a few games)
+        out = paths[0].parent / "ranking.csv"
+        with open(out, "w") as f:
+            f.write("team,wins,games,win_rate\n")
+            for t in teams:
+                f.write(f"{t},{series[t][0]},{series[t][1]},{series[t][0] / max(series[t][1], 1):.4f}\n")
+        print(f"\nfull ranking: {out}")
+        return
     print("\nseries win rate, row vs column:")
     print(" " * 8 + "".join(f"{t:>8}" for t in teams))
     for a in teams:
@@ -56,8 +92,11 @@ def summarize(paths: list[Path]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--entries", nargs="+", default=[], metavar="TEAM=MODEL",
-                    help="team file stem in --teams and the model that pilots it")
+                    help="team file stem in --teams and the model that pilots it; TEAM@TAG=MODEL enters "
+                         "the same team more than once (e.g. MC196@v7, MC196@v8)")
     ap.add_argument("--teams", type=Path, default=Path("data/teams/reg_mc_top"))
+    ap.add_argument("--all", metavar="MODEL", default=None,
+                    help="every team in --teams, all piloted by MODEL (instead of --entries)")
     ap.add_argument("--series", type=int, default=50, help="matches per pair (Bo3 series, or Bo1 games)")
     ap.add_argument("--format", default="gen9championsvgc2026regmcbo3")
     ap.add_argument("--showdown", type=Path, default=None, help="Showdown checkout (pokemon-showdown-mc for M-C)")
@@ -65,16 +104,20 @@ def main() -> None:
     ap.add_argument("--rating", type=float, default=1700)
     ap.add_argument("--vary-k", type=int, default=3, help="Bo3 games 2+: preview from the policy's top k")
     ap.add_argument("--concurrency", type=int, default=8)
+    ap.add_argument("--greedy", action="store_true", help="always play the policy's likeliest action")
     ap.add_argument("--closed-sheets", action="store_true", help="both sides decline open team sheets (Bo1 CTS)")
     ap.add_argument("--shard", default="0/1", help="i/k: play pairs i, i+k, i+2k, ...")
     ap.add_argument("--out", type=Path, default=Path("data/team_rr/rr.csv"))
     ap.add_argument("--sum", nargs="+", type=Path, default=None, help="only add up these CSVs and print the table")
+    ap.add_argument("--top", type=int, default=40, help="with --sum: teams listed")
     args = ap.parse_args()
     if args.sum:
-        summarize(args.sum)
+        summarize(args.sum, args.top)
         return
 
     entries = dict(e.split("=", 1) for e in args.entries)
+    if args.all:
+        entries = {p.stem: args.all for p in sorted(args.teams.glob("*.txt"))}
     i, k = map(int, args.shard.split("/"))
     pairs = list(itertools.combinations(sorted(entries), 2))[i::k]
     models = {}
@@ -85,15 +128,15 @@ def main() -> None:
         if path not in models:
             models[path] = load_policy(path)
         p.model = models[path]
-        p._team = ConstantTeambuilder((args.teams / f"{team}.txt").read_text())
+        p._team = ConstantTeambuilder((args.teams / f"{team.split('@')[0]}.txt").read_text())
 
     proc = ensure_server(args.port, args.showdown)
     common = dict(battle_format=args.format, max_concurrent_battles=args.concurrency,
                   accept_open_team_sheet=not args.closed_sheets,
                   log_level=40, server_configuration=ServerConfiguration(
                       f"ws://localhost:{args.port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?"))
-    pa, pb = (NNPlayer(load_policy(entries[pairs[0][0]]), args.rating, True, account_configuration=account(n),
-                       team=ConstantTeambuilder((args.teams / f"{pairs[0][0]}.txt").read_text()), **common)
+    pa, pb = (NNPlayer(load_policy(entries[pairs[0][0]]), args.rating, args.greedy, account_configuration=account(n),
+                       team=ConstantTeambuilder((args.teams / f"{pairs[0][0].split('@')[0]}.txt").read_text()), **common)
               for n in ("rra", "rrb"))
     for p in (pa, pb):
         p.vary, p.vary_k, p.change_after_loss = True, args.vary_k, True

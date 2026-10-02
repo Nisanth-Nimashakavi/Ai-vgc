@@ -11,10 +11,12 @@
 #   --mb                                   Reg M-B instead of Reg M-C
 #   --general                              M-C: the top-10 pool with mc-bo1-rnad-v3 instead of MC196 with mc-bo1-rnad-v3-mc196
 #   --top N                                M-C: like --general, but a random one of the best N teams per match
+#   --use TEAM...                          M-C: a random one of these reg_mc_top teams per match (e.g. --use MC408 MC358)
 #   --gauntlet [N]                         M-C: the top N (default 10) teams each play 4 series, the worse
 #                                          half is dropped, repeat until 2 are left (then those two).
 #                                          Carries on across restarts; --gauntlet-new starts it over
-#   --watch                                follow the battles in one browser tab (links always print)
+#   --watch                                a local page that shows the live battle and moves on to
+#                                          game 2/3 and the next match by itself (links always print)
 #   --no-timer                             don't turn the battle timer on (on by default)
 #   --no-munchstats                        don't refresh MunchStats usage (search's set and spread guesses)
 #
@@ -30,7 +32,7 @@ cd "${self:h}/.."
 
 usage() { sed -n '2,15p' $self | sed 's/^# \{0,1\}//'; exit 1; }
 
-mode= name= n= bo=bo3 reg=regmc watch=0 general=0 top= gauntlet=0 names=() pass=()
+mode= name= n= bo=bo3 reg=regmc watch=0 general=0 top= gauntlet=0 names=() use=() pass=()
 while (( $# )); do
   case $1 in
     --ladder)    mode=ladder ;;
@@ -43,6 +45,7 @@ while (( $# )); do
     --watch)     watch=1 ;;
     --general)   general=1 ;;
     --top)       general=1; top=$2; shift ;;
+    --use)       general=1; while [[ $# -gt 1 && $2 != --* ]]; do use+=($2); shift; done ;;
     --gauntlet)  general=1; gauntlet=1; top=10; [[ $# -gt 1 && $2 == <-> ]] && { top=$2; shift } ;;
     --gauntlet-new) rm -f data/live_games/gauntlet.since ;;
     -h|--help)   usage ;;
@@ -60,6 +63,7 @@ ranked=(MC196 MC147 MC371 MC378 MC358 MC408 MC337 MC321 MC41 MC4)
 if [[ $reg == regmc ]] && (( general )); then
   data=(--showdown pokemon-showdown-mc --teams data/teams/reg_mc_top --sets data/teams/reg_mc --model data/models/mc-bo1-rnad-v3.pt)
   [[ -n $top ]] && data+=(--only ${ranked[1,top]})
+  (( ${#use} )) && data+=(--only $use)
   if (( gauntlet )); then
     since=data/live_games/gauntlet.since  # when this gauntlet started: games before it don't count
     [[ -f $since ]] || date '+%Y-%m-%d %H:%M:%S' >$since
@@ -83,7 +87,23 @@ if [[ ${SERVER:-showdown} == showdown ]] && (( ! ${pass[(I)--no-munchstats]} ));
   uv run python -m ai_vgc.munchstats >>data/live_games/munchstats.log 2>&1 &!
 fi
 
-run() { uv run --extra nn python -m ai_vgc.nn.player $common "$@" $pass; }
+# Ask for the password once, so a reconnect (below) doesn't ask again.
+if [[ ${SERVER:-showdown} == showdown && -z ${PS_PASSWORD+x} ]]; then
+  read -rs "PS_PASSWORD?Showdown password for ${BOT:-nimnimbot} (blank if unregistered): "; echo
+  export PS_PASSWORD
+fi
+
+# Exit code 75: the connection dropped (player.py's watchdog); log in again and carry on.
+run() {
+  local code
+  while true; do
+    code=0
+    uv run --extra nn python -m ai_vgc.nn.player $common "$@" $pass || code=$?  # (set -e)
+    (( code == 75 )) || return $code
+    echo "reconnecting in 10 s (Ctrl-C to stop)"
+    sleep 10
+  done
+}
 case $mode in
   ladder)    run --ladder --n ${n:-$forever} ;;
   challenge) run --challenge $name --n ${n:-1} ;;

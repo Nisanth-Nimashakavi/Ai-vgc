@@ -1,0 +1,60 @@
+Incineroar (M) @ Sitrus Berry  
+Ability: Intimidate  
+Level: 50  
+EVs: 32 HP / 14 Def / 20 SpD  
+Careful Nature  
+- Fake Out  
+- Flare Blitz  
+- Throat Chop  
+- Parting Shot  
+
+Maushold @ Chople Berry  
+Ability: Friend Guard  
+Level: 50  
+EVs: 32 HP / 32 Def / 2 SpD  
+Bold Nature  
+- Protect  
+- Super Fang  
+- Feint  
+- Follow Me  
+
+Sinistcha @ Occa Berry  
+Ability: Hospitality  
+Level: 50  
+EVs: 32 HP / 4 Def / 30 SpD  
+Bold Nature  
+- Protect  
+- Matcha Gotcha  
+- Rage Powder  
+- Trick Room  
+
+Sneasler (F) @ Focus Sash  
+Ability: Poison Touch  
+Level: 50  
+EVs: 2 HP / 32 Atk / 32 Spe  
+Jolly Nature  
+- Fake Out  
+- Close Combat  
+- Poison Jab  
+- Quick Guard  
+
+Blastoise (M) @ Blastoisinite  
+Ability: Rain Dish  
+Level: 50  
+EVs: 22 HP / 7 Def / 25 SpA / 1 SpD / 11 Spe  
+Modest Nature  
+- Protect  
+- Water Spout  
+- Dark Pulse  
+- Shell Smash  
+
+Delphox (M) @ Delphoxite  
+Ability: Blaze  
+Level: 50  
+EVs: 2 HP / 32 SpA / 32 Spe  
+Timid Nature  
+- Protect  
+- Heat Wave  
+- Psychic  
+- Nasty Plot  
+
