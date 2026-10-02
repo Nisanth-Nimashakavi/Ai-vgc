@@ -24,3 +24,12 @@ data/team_tests/
 *.tmp
 dist/
 .ipynb_checkpoints/
+
+# models kept in git (best ladder/Bo3 models and the opponents they are tested against)
+!data/models/mc-cts-rnad-v7-MC301.pt
+!data/models/mc-cts-rnad-v7-MC378.pt
+!data/models/mc-cts-rnad-v6.pt
+!data/models/mc-cts-opp-v6.pt
+!data/models/all-bo3-bc-v2.pt
+!data/models/all-bo3-opp-v2.pt
+!data/models/mc-bo3-rnad-v5.pt
