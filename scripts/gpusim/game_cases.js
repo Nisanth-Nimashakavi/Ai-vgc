@@ -23,7 +23,7 @@ const selfOk = m => !m.self || (Object.keys(m.self).join() === 'boosts' && boost
 const common = m => !m.isNonstandard && !hasFn(m) && !m.isZ && !m.isMax && secOk(m) && !m.multihit && !m.drain && !m.recoil && !m.mindBlownRecoil
 	&& !m.damage && !m.ohko && !m.selfdestruct && !m.forceSwitch && !m.selfSwitch && !m.volatileStatus && !m.sideCondition && !m.weather
 	&& !m.terrain && !m.pseudoWeather && !m.heal && !m.flags.charge && !m.flags.recharge && !m.flags.futuremove && !m.breaksProtect
-	&& !m.overrideOffensiveStat && !m.overrideDefensiveStat && !m.overrideOffensivePokemon && !m.willCrit && m.critRatio === 1
+	&& !m.overrideOffensiveStat && !m.overrideDefensiveStat && !m.overrideOffensivePokemon
 	&& !['Struggle', 'Future Sight', 'Doom Desire'].includes(m.name);
 const damaging = m => common(m) && m.category !== 'Status' && m.basePower > 1 && !m.basePowerCallback && !m.boosts && !m.status
 	&& selfOk(m) && ['normal', 'any', 'allAdjacentFoes', 'allAdjacent'].includes(m.target);
@@ -59,14 +59,16 @@ const snapshot = (b, names) => {
 const out = [];
 while (out.length < N) {
 	const mk = k => {
-		const s = species[rnd(species.length)];
+		const item = IMPL.items.length && rnd(3) ? cycle(IMPL.items, 'i') : '';
+		const forced = {leek: ['sirfetchd', 'farfetchd'], lightball: ['pikachu']}[item];  // species-locked items need their species
+		const s = forced ? dex.species.get(pick(forced)) : species[rnd(species.length)];
 		const ms = [];  // legal teams never repeat a move
 		while (ms.length < 4) {
 			const pool = ms.length === 3 && rnd(3) === 0 ? fieldMoves : moves;  // last slot is often a field move
 			const id = pick(pool).id;
 			if (!ms.includes(id)) ms.push(id);
 		}
-		return {species: s.name, name: 'm' + k, ability: IMPL.abilities.length && rnd(4) ? cycle(IMPL.abilities, 'a') : 'Illuminate', item: IMPL.items.length && rnd(3) ? cycle(IMPL.items, 'i') : '', nature: natures[rnd(natures.length)], level: 50, moves: ms,
+		return {species: s.name, name: 'm' + k, ability: IMPL.abilities.length && rnd(4) ? cycle(IMPL.abilities, 'a') : 'Illuminate', item, nature: natures[rnd(natures.length)], level: 50, moves: ms,
 			evs: {hp: rnd(33), atk: rnd(33), def: rnd(33), spa: rnd(33), spd: rnd(33), spe: rnd(33)}};
 	};
 	const teams = [0, 1].map(() => [0, 1, 2, 3].map(mk));

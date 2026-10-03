@@ -81,6 +81,9 @@ class Tables:
         self.mv_acc_true = np.array([m['accuracy'] is True for m in mv], bool)
         self.mv_ignore_ability = np.array([bool(m.get('ignoreAbility')) for m in mv], bool)
         self.ab_breakable = np.array([False] + [bool((a.get('flags') or {}).get('breakable')) for a in t['abilities']], bool)
+        self.mv_crit = np.array([m['critRatio'] or 0 for m in mv], np.int32)
+        self.mv_willcrit = np.array([bool(m.get('willCrit')) for m in mv], bool)
+        self.mv_tracks = np.array([bool(m.get('tracksTarget')) for m in mv], bool)
         self.mv_pp = np.array([m['pp'] if m.get('noPPBoosts') else (4 * (min(m['pp'], 20) + 5) + 4) // 5 for m in mv], np.int32)  # Champions calculatePP (PP > 20 capped); fractional PP rounds up, as Showdown only checks for 0
         self.mv_protect = np.array([m["id"] in ("protect", "detect") for m in mv], bool)
         self.mv_blockable = np.array([bool((m.get("flags") or {}).get("protect")) for m in mv], bool)

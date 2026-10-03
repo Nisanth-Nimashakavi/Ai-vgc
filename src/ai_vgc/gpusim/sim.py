@@ -20,7 +20,7 @@ SIDE_KEYS = ("tw_t", "reflect_t", "ls_t", "av_t")  # [2] turns left per side
 TABLE_NAMES = ("mv_type mv_cat mv_bp mv_prio mv_target mv_acc sp_types mv_boost mv_boost_self mv_self_boost "
                "mv_status mv_sec_chance mv_sec_status mv_sec_boost mv_sec_self_boost mv_imm mv_ign_def mv_ign_off "
                "mv_powder mv_field mv_halve_grassy mv_protect mv_blockable mv_fakeout mv_selfboost mv_pp mv_recoil "
-               "mv_has_sec mv_toxic mv_acc_true mv_ignore_ability").split()
+               "mv_has_sec mv_toxic mv_acc_true mv_ignore_ability mv_crit mv_willcrit mv_tracks").split()
 
 
 def make_tables(t=None):
@@ -121,7 +121,10 @@ def make_tables(t=None):
     for name, (when, mult) in E.SPEED.items():
         sp_when[ai[name]], sp_mult[ai[name]] = E.SPEED_WHEN.index(when), mult
     return {**tab, **eff, "rules": rules, "ab_sp_when": jnp.asarray(sp_when), "ab_sp_mult": jnp.asarray(sp_mult),
-            "ab_quickfeet": flagn(["quickfeet"]), "ab_speedboost": flagn(["speedboost"]),
+            "ab_quickfeet": flagn(["quickfeet"]), "ab_noredirect": flagn(E.IGNORE_REDIRECT), "ab_critplus": per(ai, {"superluck": 1}, 0), "ab_merciless": flagn(["merciless"]),
+            "it_critplus": per(ii, E.CRIT_PLUS if False else {"scopelens": 1}, 0),
+            "it_leek": per(ii, dict.fromkeys(E.CRIT_LEEK, True), False, bool),
+            "sp_leek": jnp.asarray(np.array([sp["id"] in ("farfetchd", "farfetchdgalar", "sirfetchd") for sp in t.raw["species"]], bool)), "ab_speedboost": flagn(["speedboost"]),
             "abs_type": jnp.asarray(abs_type), "abs_flag": jnp.asarray(abs_flag), "abs_kind": jnp.asarray(abs_kind),
             "abs_stat": jnp.asarray(abs_stat), "abs_n": jnp.asarray(abs_n), "redirect": jnp.asarray(redirect),
             "ab_ungrounded": flagn(E.UNGROUNDED), "ab_windrider": flagn(["windrider"]), "ab_breakable": jnp.asarray(t.ab_breakable), "ab_moldbreaker": flagn(E.MOLD_BREAKER),
@@ -380,7 +383,7 @@ def step(tab, state, actions, rng):
                             tab["rt_type"][st["ability"][ma]], mt0)
             brk0 = tab["ab_moldbreaker"][st["ability"][ma]] | tab["mv_ignore_ability"][m]
             ab_vis = jnp.where(brk0 & tab["ab_breakable"][ab_all0], 0, ab_all0)  # a mold-breaker ignores breakable abilities
-            holders = alive & (ids != a) & (tab["redirect"][ab_vis] == mt_) & (tgt == 0) & ~tab["mv_boost_self"][m]
+            holders = alive & (ids != a) & (tab["redirect"][ab_vis] == mt_) & (tgt == 0) & ~tab["mv_boost_self"][m] & ~tab["mv_tracks"][m] & ~tab["ab_noredirect"][st["ability"][ma]]
             spe_o = _speeds(tab, st)
             spe_o = jnp.where(st["tr_t"] > 0, -spe_o, spe_o)
             best = jnp.argmax(jnp.where(holders, spe_o * 4 - ids, -(2 ** 30)))
@@ -415,8 +418,8 @@ def step(tab, state, actions, rng):
             texp = jax.vmap(lambda dt: _type_exp(tab, mtype, dt))(types)
             powder_block = tab["mv_powder"][m] & (_has(types, tab["t_grass"]) | tab["ab_powder_imm"][st["ability"][A]])
             psy_block = (st["terrain"] == 4) & grounded & (tab["mv_prio"][m] > 0) & foe
-            immune = (((texp == -99) & tab["mv_imm"][m]) | powder_block | psy_block) & (tgt != 3)
-            mask = mask & ~blocked & can
+            immune = (((texp == -99) & tab["mv_imm"][m]) | powder_block) & (tgt != 3)
+            mask = mask & ~blocked & ~(psy_block & (tgt != 3)) & can  # Protect and Psychic Terrain act before abilities
             ab_a0 = st["ability"][ma]
             breaker = (tab["ab_moldbreaker"][ab_a0] | tab["mv_ignore_ability"][m])
             ab_d = jnp.where(breaker & tab["ab_breakable"][st["ability"][A]], 0, st["ability"][A])
@@ -437,7 +440,14 @@ def step(tab, state, actions, rng):
             mask = mask & ~absorbed & ~immune  # TryHit (absorb) comes before the type-immunity check
             # damage ---------------------------------------------------------------------------------
             phys = cat == 0
-            crit = rng["chance"]["1_24"]
+            # crit ratio stage: move + Super Luck/Scope Lens/Leek; Merciless always crits a poisoned target;
+            # the chance is 1/24, 1/8, 1/2, then certain; willCrit moves always crit
+            stage_ = tab["mv_crit"][m] + tab["ab_critplus"][ab_a] + tab["it_critplus"][it_a] + \
+                jnp.where(tab["it_leek"][it_a] & tab["sp_leek"][st["species"][ma]], 2, 0)
+            stage_ = jnp.where(tab["ab_merciless"][ab_a] & ((st["status"][A] == 3) | (st["status"][A] == 4)), 5, stage_)
+            stage_ = jnp.clip(stage_, 0, 4)
+            roll_c = jnp.stack([jnp.array(False), rng["chance"]["1_24"], rng["chance"]["1_8"], rng["chance"]["1_2"], jnp.array(True)])
+            crit = (roll_c[stage_] | tab["mv_willcrit"][m]) if stage_.ndim == 0 else (roll_c[stage_] | tab["mv_willcrit"][m])
             hp_a, mx_a = st["hp"][ma], st["stats"][ma, 0]
             sheer = tab["ab_sheerforce"][ab_a] & tab["mv_has_sec"][m]
             it_d = st["item"][A]  # defenders' items, per slot

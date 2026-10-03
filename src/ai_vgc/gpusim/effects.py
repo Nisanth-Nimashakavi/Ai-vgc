@@ -127,6 +127,7 @@ ABSORB = {
 }
 REDIRECT = {"lightningrod": "Electric", "stormdrain": "Water"}
 UNGROUNDED = {"levitate"}
+IGNORE_REDIRECT = {"stalwart", "propellertail"}  # the move can not be redirected
 MOLD_BREAKER = {"moldbreaker", "teravolt", "turboblaze"}  # the move ignores the target's ability
 rule("ab", "atk", "flashfire", 5, "ff_fire", 6144)
 rule("ab", "spa", "flashfire", 5, "ff_fire", 6144)
@@ -137,6 +138,11 @@ SPEED = {"sandrush": ("sand", 8192), "swiftswim": ("rain", 8192), "chlorophyll":
          "unburden": ("noitem", 8192)}
 SPEED_WHEN = ["", "sun", "rain", "sand", "snow", "eterrain", "status", "noitem"]
 SPEED_BOOST = {"speedboost"}  # +1 Spe at the end of every turn once it has been out a turn
+
+# crit ratio stage added by the attacker's ability/item (Merciless: always crits a poisoned target)
+CRIT_PLUS = {"superluck": 1, "scopelens": 1}
+CRIT_LEEK = {"leek": 2}  # only Farfetch'd / Sirfetch'd
+MERCILESS = {"merciless"}
 
 # the final damage chain: attacker ModifyDamage, defender SourceModifyDamage, anyone's AnyModifyDamage
 rule("ab", "dmg", "tintedlens", 0, "resisted", 8192)
@@ -174,10 +180,10 @@ for _i, _t in RESIST_BERRIES.items():
 PARTIAL = {"thermalexchange", "pastelveil"}
 
 ABILITIES = (set(AB_WEATHER) | set(AB_TERRAIN) | AB_INTIMIDATE | set(RETYPE) | {"adaptability"} | set(STATUS_BLOCK) | SUN_BLOCK | SAND_IMMUNE | set(SUN_DAMAGE)
-             | set(RAIN_HEAL) | set(SNOW_HEAL) | HEATPROOF | POWDER_IMMUNE | {"noguard", "victorystar", "wonderskin"} | set(ABSORB) | MOLD_BREAKER | set(SPEED) | SPEED_BOOST
+             | set(RAIN_HEAL) | set(SNOW_HEAL) | HEATPROOF | POWDER_IMMUNE | {"noguard", "victorystar", "wonderskin"} | set(ABSORB) | MOLD_BREAKER | set(SPEED) | SPEED_BOOST | IGNORE_REDIRECT | {"superluck", "merciless"}
              | {i for k in ("ab", "dab", "aab", "any") for ev in RULES.get(k, {}).values() for i in ev}) - PARTIAL
 ITEMS = (set(IT_WEATHER_EXT) | set(IT_SPE_MOD) | IT_LIFEORB | IT_LEFTOVERS | IT_SASH | IT_SITRUS
-         | IT_TERRAIN_EXT | IT_CLAY | {i for k in ("it", "dit") for ev in RULES.get(k, {}).values() for i in ev})
+         | IT_TERRAIN_EXT | IT_CLAY | {"scopelens", "leek"} | {i for k in ("it", "dit") for ev in RULES.get(k, {}).values() for i in ev})
 
 
 # Per-turn coin flips the differential test forces in Showdown ("n/d" -> bool) and replays here. A chance Showdown
