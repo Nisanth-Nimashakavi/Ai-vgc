@@ -8,7 +8,7 @@ import numpy as np
 TABLES = Path(__file__).parents[3] / "data/gpusim/tables.json"
 CATEGORY = {"Physical": 0, "Special": 1, "Status": 2}
 # target codes: how a move picks its targets
-TARGET = {"normal": 0, "any": 0, "allAdjacentFoes": 1, "allAdjacent": 2, "self": 3}
+TARGET = {"normal": 0, "any": 0, "allAdjacentFoes": 1, "allAdjacent": 2, "self": 3, "all": 4, "allySide": 4, "foeSide": 4}
 STATS = ("hp", "atk", "def", "spa", "spd", "spe")
 BOOSTS = STATS[1:]  # stat stages tracked in the sim (accuracy/evasion come later)
 STATUS = {None: 0, "brn": 1, "par": 2, "psn": 3, "tox": 4}
@@ -61,6 +61,13 @@ class Tables:
         self.mv_ign_def = np.array([bool(m.get('ignoreDefensive')) for m in mv], bool)
         self.mv_ign_off = np.array([bool(m.get('ignoreOffensive')) for m in mv], bool)
         self.mv_powder = np.array([bool((m.get('flags') or {}).get('powder')) for m in mv], bool)
+        # field effect codes: 1-4 weather (sun, rain, sand, snow), 5 Trick Room, 6 Tailwind, 7 Reflect,
+        # 8 Light Screen, 9 Aurora Veil, 10-13 terrain (electric, grassy, misty, psychic)
+        fld = {"sunnyday": 1, "raindance": 2, "sandstorm": 3, "snowscape": 4, "trickroom": 5, "tailwind": 6,
+               "reflect": 7, "lightscreen": 8, "auroraveil": 9, "electricterrain": 10, "grassyterrain": 11,
+               "mistyterrain": 12, "psychicterrain": 13}
+        self.mv_field = np.array([fld.get(m["id"], 0) for m in mv], np.int32)
+        self.mv_halve_grassy = np.array([m["id"] in ("earthquake", "bulldoze", "magnitude") for m in mv], bool)
         # damaging moves always check type immunity; status moves only when ignoreImmunity is false
         self.mv_imm = np.array([m["category"] != "Status" or m.get("ignoreImmunity") is False for m in mv], bool)
 
