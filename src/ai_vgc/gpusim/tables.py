@@ -10,6 +10,8 @@ CATEGORY = {"Physical": 0, "Special": 1, "Status": 2}
 # target codes: how a move picks its targets
 TARGET = {"normal": 0, "any": 0, "allAdjacentFoes": 1, "allAdjacent": 2, "self": 3}
 STATS = ("hp", "atk", "def", "spa", "spd", "spe")
+BOOSTS = STATS[1:]  # stat stages tracked in the sim (accuracy/evasion come later)
+STATUS = {None: 0, "brn": 1, "par": 2, "psn": 3, "tox": 4}
 NATURES = {  # nature -> (plus, minus); neutral natures have none
     "Adamant": ("atk", "spa"), "Modest": ("spa", "atk"), "Bold": ("def", "atk"),
     "Calm": ("spd", "atk"), "Jolly": ("spe", "spa"), "Timid": ("spe", "atk"),
@@ -40,6 +42,27 @@ class Tables:
         self.mv_acc = np.array([100 if m["accuracy"] is True else m["accuracy"] for m in mv], np.int32)
         self.mv_prio = np.array([m["priority"] for m in mv], np.int32)
         self.mv_target = np.array([TARGET.get(m["target"], 0) for m in mv], np.int32)
+
+        def boosts(d):
+            d = d or {}
+            return [d.get(k, 0) for k in BOOSTS]
+
+        def sec(m):  # the first (only supported) secondary effect, else a no-op
+            return (m.get("secondaries") or [{}])[0]
+
+        self.mv_boost = np.array([boosts(m.get("boosts")) for m in mv], np.int32)
+        self.mv_boost_self = np.array([m["target"] == "self" for m in mv], bool)
+        self.mv_self_boost = np.array([boosts((m.get("self") or m.get("selfBoost") or {}).get("boosts")) for m in mv], np.int32)
+        self.mv_status = np.array([STATUS.get(m.get("status"), 0) for m in mv], np.int32)
+        self.mv_sec_chance = np.array([sec(m).get("chance", 0) for m in mv], np.int32)
+        self.mv_sec_status = np.array([STATUS.get(sec(m).get("status"), 0) for m in mv], np.int32)
+        self.mv_sec_boost = np.array([boosts(sec(m).get("boosts")) for m in mv], np.int32)
+        self.mv_sec_self_boost = np.array([boosts((sec(m).get("self") or {}).get("boosts")) for m in mv], np.int32)
+        self.mv_ign_def = np.array([bool(m.get('ignoreDefensive')) for m in mv], bool)
+        self.mv_ign_off = np.array([bool(m.get('ignoreOffensive')) for m in mv], bool)
+        self.mv_powder = np.array([bool((m.get('flags') or {}).get('powder')) for m in mv], bool)
+        # damaging moves always check type immunity; status moves only when ignoreImmunity is false
+        self.mv_imm = np.array([m["category"] != "Status" or m.get("ignoreImmunity") is False for m in mv], bool)
 
 
 @lru_cache
