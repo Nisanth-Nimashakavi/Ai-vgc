@@ -29,7 +29,8 @@ const damaging = m => common(m) && m.category !== 'Status' && m.basePower > 1 &&
 const statusMove = m => common(m) && m.category === 'Status' && (m.boosts || m.status) && boostsOk(m.boosts) && !m.self
 	&& (!m.status || STATUS.includes(m.status)) && ['normal', 'allAdjacentFoes', 'self'].includes(m.target);
 const fieldMove = m => FIELD.includes(m.id);
-const moves = dex.moves.all().filter(m => damaging(m) || statusMove(m) || fieldMove(m));
+const SPECIAL = ['protect', 'detect', 'fakeout']; // implemented by id, not by the generic filters
+const moves = dex.moves.all().filter(m => damaging(m) || statusMove(m) || fieldMove(m) || SPECIAL.includes(m.id));
 const fieldMoves = moves.filter(fieldMove);
 const natures = ['Adamant', 'Modest', 'Bold', 'Calm', 'Hardy', 'Jolly', 'Timid', 'Impish', 'Careful'];
 const wcode = {sunnyday: 1, raindance: 2, sandstorm: 3, snowscape: 4, snow: 4}, tcode = {electricterrain: 1, grassyterrain: 2, mistyterrain: 3, psychicterrain: 4};
@@ -63,7 +64,7 @@ while (out.length < N) {
 			p1: {name: 'a', team: teams[0]}, p2: {name: 'b', team: teams[1]}});
 	} catch (e) { continue; }
 	b.random = () => roll;
-	b.randomChance = (n, d) => (n === 1 && d === 8) ? parSkip : (n === 1 && d !== 100) ? false : true;
+	b.randomChance = (n, d) => (n === 1 && d === 8) ? parSkip : (n === 1 && d !== 100 && d !== 1) ? false : true;
 	b.makeChoices('team 1234', 'team 1234');
 	const game = {teams, stats: null, status0: null, turns: []};
 	const mons = b.sides.flatMap(s => s.pokemon);

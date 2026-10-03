@@ -18,7 +18,7 @@ FIELD_KEYS = ("weather", "weather_t", "terrain", "terrain_t", "tr_t")
 SIDE_KEYS = ("tw_t", "reflect_t", "ls_t", "av_t")  # [2] turns left per side
 TABLE_NAMES = ("mv_type mv_cat mv_bp mv_prio mv_target mv_acc sp_types mv_boost mv_boost_self mv_self_boost "
                "mv_status mv_sec_chance mv_sec_status mv_sec_boost mv_sec_self_boost mv_imm mv_ign_def mv_ign_off "
-               "mv_powder mv_field mv_halve_grassy").split()
+               "mv_powder mv_field mv_halve_grassy mv_protect mv_blockable mv_fakeout mv_selfboost").split()
 
 
 def make_tables(t=None):
@@ -64,6 +64,7 @@ def make_state(teams, t=None, status=None):
                 moves=np.array(moves, np.int32), boosts=np.zeros((8, 5), np.int32),
                 status=np.zeros(8, np.int32) if status is None else np.asarray(status, np.int32),
                 tox=np.zeros(8, np.int32), active=np.array([0, 1, 4, 5], np.int32),
+                age=np.ones(8, np.int32), stall=np.zeros(8, np.int32),
                 weather=z, weather_t=z, terrain=z, terrain_t=z, tr_t=z,
                 **{k: np.zeros(2, np.int32) for k in SIDE_KEYS})
 
@@ -107,13 +108,13 @@ def _speeds(tab, st):
 def _switch_in(st, a, mon):
     """Put mon into slot a: stages and the toxic counter reset."""
     return {**st, "active": put(st["active"], a, mon), "boosts": put(st["boosts"], mon, 0),
-            "tox": put(st["tox"], mon, 0)}
+            "tox": put(st["tox"], mon, 0), "age": put(st["age"], mon, 0), "stall": put(st["stall"], mon, 0)}
 
 
 def step(tab, state, actions, rng):
     """One turn. actions[a] = (kind, x, y): kind 0 = move slot x aimed at foe slot y; kind 1 = switch to
     teammate x (0..3 within the side). rng: rolls[a, d] 0..15, crits[a, d] bool, acc[a, d] 0..99 (hit if below
-    accuracy), sec[a, d] 0..99 (secondary fires if below its chance), skip[a] bool (fully paralysed),
+    accuracy), stall[a] bool (consecutive Protect succeeds), sec[a, d] 0..99 (secondary fires if below its chance), skip[a] bool (fully paralysed),
     tiebreak[a] in [0,1) (higher goes first on equal speed). Fainted slots are refilled by `replace`."""
     state = jax.tree.map(jnp.asarray, state)
     ids = jnp.arange(4)
@@ -158,7 +159,7 @@ def step(tab, state, actions, rng):
         return st
 
     def act(i, carry):
-        st, done = carry
+        st, done, prot, flinch = carry
         # Showdown re-sorts the remaining actions after speed changes, so pick the next actor now
         spe = _speeds(tab, st)
         spe = jnp.where(st["tr_t"] > 0, 10000 - spe, spe)
@@ -167,7 +168,7 @@ def step(tab, state, actions, rng):
         side = a // 2
 
         def do_switch(st):
-            return _switch_in(st, a, side * 4 + actions[a, 1])
+            return _switch_in(st, a, side * 4 + actions[a, 1]), prot, flinch
 
         def do_move(st):
             A = st["active"]
@@ -185,7 +186,14 @@ def step(tab, state, actions, rng):
             mask = jnp.where(tgt == 3, ids == a, mask)
             mask = jnp.where(tgt == 4, False, mask) & alive
             spread = (tgt > 0) & (tgt < 3) & (mask.sum() > 1)
-            can = alive[a] & ~((st["status"][ma] == 2) & rng["skip"][a])
+            is_prot = tab["mv_protect"][m]
+            will_act = (~done & alive).any()  # Protect fails when nothing acts after it
+            prot_ok = ((st["stall"][ma] == 0) | rng["stall"][a]) & will_act  # consecutive use succeeds 1/3^n of the time
+            fo_ok = ~tab["mv_fakeout"][m] | (st["age"][ma] <= 1)  # Fake Out: first turn out only
+            can = alive[a] & ~((st["status"][ma] == 2) & rng["skip"][a]) & ~flinch[a] & fo_ok & (~is_prot | prot_ok)
+            prot2 = put(prot, a, prot[a] | (can & is_prot))
+            st = {**st, "stall": put(st["stall"], ma, jnp.where(alive[a] & ~flinch[a], jnp.where(is_prot, jnp.where(prot_ok, st["stall"][ma] + 1, 0), 0), st["stall"][ma]))}
+            blocked = prot[ids] & tab["mv_blockable"][m] & (ids != a)  # protected targets shrug the move off
             mtype = tab["mv_type"][m]
             grounded = ~_has(types, tab["t_flying"])
             texp = jax.vmap(lambda dt: _type_exp(tab, mtype, dt))(types)
@@ -193,7 +201,7 @@ def step(tab, state, actions, rng):
             psy_block = (st["terrain"] == 4) & grounded & (tab["mv_prio"][m] > 0) & foe
             immune = (((texp == -99) & tab["mv_imm"][m]) | powder_block | psy_block) & (tgt != 3)
             hit_roll = rng["acc"][a] < tab["mv_acc"][m]
-            mask = mask & ~immune & hit_roll & can
+            mask = mask & ~immune & ~blocked & hit_roll & can
             # damage
             phys = cat == 0
             crit = rng["crits"][a]
@@ -224,6 +232,7 @@ def step(tab, state, actions, rng):
             hit_alive = hit & (hp[A] > 0)
             # secondary effects on surviving targets
             proc = hit_alive & (rng["sec"][a] < tab["mv_sec_chance"][m])
+            flinch2 = flinch | (proc & tab["mv_fakeout"][m] & ~done[ids])
             st = set_status(st, tab["mv_sec_status"][m], proc)
             st = add_boost(st, proc, tab["mv_sec_boost"][m])
             # status moves: boosts on the targets, then inflicted status
@@ -232,22 +241,25 @@ def step(tab, state, actions, rng):
             st = set_status(st, tab["mv_status"][m], smask)
             # self-drops/boosts apply once if the move hit anything
             landed = (hit | smask).any()
+            ongoing = winner(st) == -1
             me = ids == a
             st = add_boost(st, me & landed, tab["mv_self_boost"][m])
             st = add_boost(st, me & (hit & (rng["sec"][a] < tab["mv_sec_chance"][m])).any(), tab["mv_sec_self_boost"][m])
+            st = add_boost(st, me & landed & ongoing, tab["mv_selfboost"][m])  # skipped when the move ends the battle
             # field-wide moves
             f = tab["mv_field"][m]
-            return field_move(st, jnp.where(can & (tgt == 4), f, 0), a)
+            return field_move(st, jnp.where(can & (tgt == 4), f, 0), a), prot2, flinch2
 
         over = winner(st) != -1  # the battle ends the moment a side is wiped out
         sw = is_switch[a] & (st["hp"][st["active"][a]] > 0)
         switched = do_switch(st)
         moved = do_move(st)
         pick = lambda cond, x, y: jax.tree.map(lambda p, q: jnp.where(cond, p, q), x, y)
-        st = pick(over, st, pick(sw, switched, pick(is_switch[a], st, moved)))
-        return st, done
+        st, prot, flinch = pick(over, (st, prot, flinch), pick(sw, switched, pick(is_switch[a], (st, prot, flinch), moved)))
+        return st, done, prot, flinch
 
-    st, _ = jax.lax.fori_loop(0, 4, act, (state, jnp.zeros(4, bool)))
+    st, *_ = jax.lax.fori_loop(0, 4, act, (state, jnp.zeros(4, bool), jnp.zeros(4, bool), jnp.zeros(4, bool)))
+    st = {**st, "age": put(st["age"], st["active"], st["age"][st["active"]] + 1)}
     res = _residual(tab, st, rng["tiebreak"])
     return jax.tree.map(lambda p, q: jnp.where(winner(st) != -1, p, q), st, res)
 
@@ -308,6 +320,7 @@ def replace(state, choice):
         mon = (a // 2) * 4 + jnp.maximum(choice[a], 0)
         ok = (choice[a] >= 0) & (st["hp"][st["active"][a]] == 0) & (st["hp"][mon] > 0) & ~(st["active"] == mon).any()
         sw = _switch_in(st, a, mon)
+        sw = {**sw, "age": put(sw["age"], mon, 1)}  # activeTurns ticks to 1 before its first move
         st = jax.tree.map(lambda p, q: jnp.where(ok, p, q), sw, st)
     return st
 

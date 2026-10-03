@@ -28,7 +28,7 @@ def tiebreak(log):
 
 def rng_for(turn):
     return dict(rolls=jnp.full((4, 4), turn["roll"], jnp.int32), crits=jnp.zeros((4, 4), bool),
-                acc=jnp.zeros((4, 4), jnp.int32), sec=jnp.full((4, 4), turn["roll"], jnp.int32),
+                acc=jnp.zeros((4, 4), jnp.int32), stall=jnp.zeros(4, bool), sec=jnp.full((4, 4), turn["roll"], jnp.int32),
                 skip=jnp.full(4, turn["parSkip"], bool), tiebreak=tiebreak(turn["log"]))
 
 
@@ -78,7 +78,7 @@ def test_games_match_showdown():
                     print("MISMATCH turn", t, "actions", turn["actions"], "roll", turn["roll"])
                     for k in want:
                         if got[k] != want[k]:
-                            print("  ", k, "want", want[k], "got", got[k])
+                            print("  ", k, "want", want[k], "\n      got ", got[k])
                     print(turn["log"][:2500])
                 break  # later turns depend on this one
     assert bad == 0, f"{bad} of {len(games)} games diverge ({n} turns checked)"

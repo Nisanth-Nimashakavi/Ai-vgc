@@ -52,7 +52,9 @@ class Tables:
 
         self.mv_boost = np.array([boosts(m.get("boosts")) for m in mv], np.int32)
         self.mv_boost_self = np.array([m["target"] == "self" for m in mv], bool)
-        self.mv_self_boost = np.array([boosts((m.get("self") or m.get("selfBoost") or {}).get("boosts")) for m in mv], np.int32)
+        self.mv_self_boost = np.array([boosts((m.get("self") or {}).get("boosts")) for m in mv], np.int32)
+        # selfBoost (Clanging Scales...) is skipped when the move ends the battle; `self` and secondary self aren't
+        self.mv_selfboost = np.array([boosts((m.get("selfBoost") or {}).get("boosts")) for m in mv], np.int32)
         self.mv_status = np.array([STATUS.get(m.get("status"), 0) for m in mv], np.int32)
         self.mv_sec_chance = np.array([sec(m).get("chance", 0) for m in mv], np.int32)
         self.mv_sec_status = np.array([STATUS.get(sec(m).get("status"), 0) for m in mv], np.int32)
@@ -68,6 +70,9 @@ class Tables:
                "mistyterrain": 12, "psychicterrain": 13}
         self.mv_field = np.array([fld.get(m["id"], 0) for m in mv], np.int32)
         self.mv_halve_grassy = np.array([m["id"] in ("earthquake", "bulldoze", "magnitude") for m in mv], bool)
+        self.mv_protect = np.array([m["id"] in ("protect", "detect") for m in mv], bool)
+        self.mv_blockable = np.array([bool((m.get("flags") or {}).get("protect")) for m in mv], bool)
+        self.mv_fakeout = np.array([m["id"] == "fakeout" for m in mv], bool)
         # damaging moves always check type immunity; status moves only when ignoreImmunity is false
         self.mv_imm = np.array([m["category"] != "Status" or m.get("ignoreImmunity") is False for m in mv], bool)
 
