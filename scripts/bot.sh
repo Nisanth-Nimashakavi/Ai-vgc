@@ -17,6 +17,7 @@
 #                                          Carries on across restarts; --gauntlet-new starts it over
 #   --watch                                a local page that shows the live battle and moves on to
 #                                          game 2/3 and the next match by itself (links always print)
+#   --search                               pick moves by search (off by default; --search-depth etc. only matter with it)
 #   --no-timer                             don't turn the battle timer on (on by default)
 #   --no-munchstats                        don't refresh MunchStats usage (search's set and spread guesses)
 #
@@ -76,7 +77,7 @@ else
   data=(--model data/models/archive/mb-bo3-rnad-v3.pt)
 fi
 common=(--accept ${BOT:-nimnimbot} --server ${SERVER:-showdown} --format $format $data
-        --search --opp-model data/models/all-bo3-opp-v2.pt --search-prior 0.1 --greedy --vary --vary-k 1)
+        --opp-model data/models/all-bo3-opp-v2.pt --search-prior 0.1 --greedy --vary --vary-k 1)
 (( watch )) && common+=(--watch)
 forever=1000000  # "until Ctrl-C"
 

@@ -424,8 +424,15 @@ html,body{margin:0;height:100%;overflow:hidden;background:#444}
 .ps-room .battle-log{bottom:0}
 .ps-room .battle-controls{top:370px;bottom:0;padding:4px 0}
 .battle-controls .button{margin:0 0 6px 8px}
+#snd{position:fixed;top:6px;right:8px;z-index:50}
+#sndmenu{display:none;margin-top:4px;padding:8px 12px;background:#10161f;border:1px solid #445;border-radius:6px;color:#ddd;font-size:13px;width:190px}
+#sndmenu label{display:block;margin:4px 0 0}#sndmenu input[type=range]{width:100%}
 </style>
 <body class=dark><div class="ps-room ps-room-opaque" id=room><div class=battle></div><div class=battle-log></div>
+<div id=snd><button class=button id=sndbtn><i class="fa fa-volume-up"></i></button>
+<div id=sndmenu><label>Effect volume:<input type=range id=vfx min=0 max=100></label>
+<label>Music volume:<input type=range id=vbgm min=0 max=100></label>
+<label><input type=checkbox id=vmute> Mute sounds</label></div></div>
 <div class=battle-controls>
 <button class=button id=bplay><i class="fa fa-pause"></i><br>Pause</button>
 <button class=button id=bfirst><i class="fa fa-undo"></i><br>First turn</button><button class=button
@@ -476,7 +483,7 @@ async function poll() {
     if (!battle) {
       battle = new Battle({id: tag, $frame: $(".battle"), $logFrame: $(".battle-log"),
                            log: add, isReplay: false, paused: false, autoresize: false});
-      battle.setMute(true);
+      applySound();
       if (q.get("role") === "p2" && battle.setViewpoint) battle.setViewpoint("p2");
       battle.messageShownTime = 1;  // "fast" in the replay speed menu: keeps up with a live game
       battle.messageFadeTime = 50;
@@ -490,6 +497,22 @@ async function poll() {
 // Controls, as in Showdown's own battle room. While the bot plays, "live" is at the end of what's
 // happened so far; going back pauses following, and Skip to end / Play catches up again.
 const $id = id => document.getElementById(id);
+// Sound: on by default, with Showdown's own volume menu. Choices are kept in localStorage because
+// this frame is reloaded for every game.
+const snd = {mute: false, fx: 50, bgm: 50};
+try { Object.assign(snd, JSON.parse(localStorage.getItem("watchSound") || "{}")); } catch (e) {}
+function applySound() {
+  try {
+    BattleSound.setEffectVolume(snd.fx); BattleSound.setBgmVolume(snd.bgm);
+    if (battle) battle.setMute(snd.mute); else BattleSound.setMute(snd.mute);
+  } catch (e) {}
+  try { localStorage.setItem("watchSound", JSON.stringify(snd)); } catch (e) {}
+}
+$id("vfx").value = snd.fx; $id("vbgm").value = snd.bgm; $id("vmute").checked = snd.mute;
+$id("vfx").oninput = e => { snd.fx = +e.target.value; applySound(); };
+$id("vbgm").oninput = e => { snd.bgm = +e.target.value; applySound(); };
+$id("vmute").onchange = e => { snd.mute = e.target.checked; applySound(); };
+$id("sndbtn").onclick = () => { const m = $id("sndmenu"); m.style.display = m.style.display === "block" ? "none" : "block"; };
 function refresh() {
   if (!battle) return;
   const live = battle.atQueueEnd && !battle.paused;
@@ -856,6 +879,12 @@ def main() -> None:
                     help="2: score each turn-1 playout after a second simulated turn")
     ap.add_argument("--search-k2", type=int, default=3, help="depth 2: our candidates on turn 2")
     ap.add_argument("--search-opp-k2", type=int, default=3, help="depth 2: the opponent's candidates on turn 2")
+    ap.add_argument("--search-procs", type=int, default=1,
+                    help="simulator processes search splits its turn-1 playouts across (more seeds, same wall time)")
+    ap.add_argument("--search-refine", type=int, default=0,
+                    help="one-turn search, second stage: the best N candidates get --search-refine-seeds "
+                         "more simulations each (0 = off); --search-seeds is then the cheap first pass")
+    ap.add_argument("--search-refine-seeds", type=int, default=64, help="extra simulations per refined pairing")
     ap.add_argument("--search-seeds2", type=int, default=1, help="depth 2: simulations per turn-2 pairing")
     ap.add_argument("--adapt", action="store_true",
                     help="Bo3: pick games 2-3 previews against the opponent's last leads (bo3.py)")
@@ -949,7 +978,9 @@ def main() -> None:
                                             showdown=args.showdown or "pokemon-showdown", k=args.search_k,
                                             opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
                                             depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
-                                            seeds2=args.search_seeds2, prior=args.search_prior, **kw)
+                                            seeds2=args.search_seeds2, prior=args.search_prior,
+                                            procs=args.search_procs, refine=args.search_refine,
+                                            refine_seeds=args.search_refine_seeds, **kw)
                 bot.formats = formats
                 bot.counter_t1 = args.counter_t1
                 if public and not args.no_munchstats:
@@ -1035,7 +1066,9 @@ def main() -> None:
                               showdown=args.showdown or "pokemon-showdown", k=args.search_k,
                               opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
                               depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
-                              seeds2=args.search_seeds2, prior=args.search_prior, **kw)
+                              seeds2=args.search_seeds2, prior=args.search_prior,
+                              procs=args.search_procs, refine=args.search_refine,
+                              refine_seeds=args.search_refine_seeds, **kw)
             me.counter_t1 = args.counter_t1
         else:
             me = NNPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,

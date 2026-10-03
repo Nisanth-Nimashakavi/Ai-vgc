@@ -68,6 +68,20 @@ def make_state(teams, t=None, status=None):
                 **{k: np.zeros(2, np.int32) for k in SIDE_KEYS})
 
 
+def put(arr, idx, vals):
+    """arr.at[idx].set(vals) as a one-hot select. jnp scatters compile very slowly under vmap on CPU, and these
+    arrays are tiny. idx: scalar or [k] int (unique; out-of-range entries are dropped); vals match arr[idx]."""
+    n = arr.shape[0]
+    idx = jnp.asarray(idx)
+    hit = jnp.arange(n) == (idx[..., None] if idx.ndim else idx)  # [n] or [k, n]
+    if idx.ndim == 0:
+        return jnp.where(hit.reshape((n,) + (1,) * (arr.ndim - 1)), jnp.asarray(vals, arr.dtype), arr)
+    vals = jnp.asarray(vals, arr.dtype)
+    sel = hit.T.reshape((n, idx.shape[0]) + (1,) * (arr.ndim - 1))  # [n, k, ...]
+    picked = jnp.where(sel, vals[None], 0).sum(axis=1).astype(arr.dtype)
+    return jnp.where(hit.any(axis=0).reshape((n,) + (1,) * (arr.ndim - 1)), picked, arr)
+
+
 def stage(stat, boost):
     """Showdown calculateStat boost step: floor(stat * table[boost]) with table 2+b/2 or 2/(2-b)."""
     return jnp.where(boost >= 0, stat * (2 + boost) // 2, stat * 2 // (2 - boost))
@@ -92,8 +106,8 @@ def _speeds(tab, st):
 
 def _switch_in(st, a, mon):
     """Put mon into slot a: stages and the toxic counter reset."""
-    return {**st, "active": st["active"].at[a].set(mon), "boosts": st["boosts"].at[mon].set(0),
-            "tox": st["tox"].at[mon].set(0)}
+    return {**st, "active": put(st["active"], a, mon), "boosts": put(st["boosts"], mon, 0),
+            "tox": put(st["tox"], mon, 0)}
 
 
 def step(tab, state, actions, rng):
@@ -115,16 +129,16 @@ def step(tab, state, actions, rng):
         misty = (st["terrain"] == 3) & ~_has(types, tab["t_flying"])
         ok = who & (st["status"][A] == 0) & ~blocked & ~misty & (code > 0)
         mon = jnp.where(ok, A, 8)  # out-of-range index drops the update
-        return {**st, "status": st["status"].at[mon].set(code, mode="drop"),
-                "tox": st["tox"].at[mon].set(0, mode="drop")}
+        return {**st, "status": put(st["status"], mon, jnp.full(4, code)), "tox": put(st["tox"], mon, jnp.zeros(4, jnp.int32))}
 
     def add_boost(st, who, delta):
         A = st["active"]
         new = jnp.clip(st["boosts"][A] + delta, -6, 6)
-        return {**st, "boosts": st["boosts"].at[A].set(jnp.where(who[:, None], new, st["boosts"][A]))}
+        return {**st, "boosts": put(st["boosts"], A, jnp.where(who[:, None], new, st["boosts"][A]))}
 
     def field_move(st, f, a):
-        """Set weather/terrain/Trick Room/side conditions. Fails if already active (Trick Room toggles)."""
+        """Set weather/terrain/Trick Room/side conditions (f = 0 for none). Fails if already active (Trick Room
+        toggles)."""
         side = a // 2
         w = (f >= 1) & (f <= 4)
         okw = w & (st["weather"] != f)
@@ -140,7 +154,7 @@ def step(tab, state, actions, rng):
             ok = (f == code) & (st[key][side] == 0)
             if code == 9:
                 ok = ok & (st["weather"] == 4)
-            st = {**st, key: st[key].at[side].set(jnp.where(ok, dur, st[key][side]))}
+            st = {**st, key: put(st[key], side, jnp.where(ok, dur, st[key][side]))}
         return st
 
     def act(i, carry):
@@ -149,7 +163,7 @@ def step(tab, state, actions, rng):
         spe = _speeds(tab, st)
         spe = jnp.where(st["tr_t"] > 0, 10000 - spe, spe)
         a = jnp.argmax(jnp.where(done, -(2 ** 30), prio + spe * 4))
-        done = done.at[a].set(True)
+        done = put(done, a, True)
         side = a // 2
 
         def do_switch(st):
@@ -205,7 +219,7 @@ def step(tab, state, actions, rng):
             dmg = damage(LEVEL, bp, atk, dfn, rng["rolls"][a], crit, stab, texp,
                          (st["status"][ma] == 1) & phys, spread, tab["wmod"][w, mtype], final)
             hit = mask & (cat < 2)
-            hp = st["hp"].at[A].set(jnp.where(hit, jnp.maximum(st["hp"][A] - dmg, 0), st["hp"][A]))
+            hp = put(st["hp"], A, jnp.where(hit, jnp.maximum(st["hp"][A] - dmg, 0), st["hp"][A]))
             st = {**st, "hp": hp}
             hit_alive = hit & (hp[A] > 0)
             # secondary effects on surviving targets
@@ -223,16 +237,19 @@ def step(tab, state, actions, rng):
             st = add_boost(st, me & (hit & (rng["sec"][a] < tab["mv_sec_chance"][m])).any(), tab["mv_sec_self_boost"][m])
             # field-wide moves
             f = tab["mv_field"][m]
-            return jax.lax.cond(can & (f > 0) & (tgt == 4), lambda s: field_move(s, f, a), lambda s: s, st)
+            return field_move(st, jnp.where(can & (tgt == 4), f, 0), a)
 
         over = winner(st) != -1  # the battle ends the moment a side is wiped out
-        st = jax.lax.cond(over, lambda s: s, lambda s: jax.lax.cond(
-            is_switch[a] & (s["hp"][s["active"][a]] > 0), do_switch,
-            lambda x: jax.lax.cond(is_switch[a], lambda y: y, do_move, x), s), st)
+        sw = is_switch[a] & (st["hp"][st["active"][a]] > 0)
+        switched = do_switch(st)
+        moved = do_move(st)
+        pick = lambda cond, x, y: jax.tree.map(lambda p, q: jnp.where(cond, p, q), x, y)
+        st = pick(over, st, pick(sw, switched, pick(is_switch[a], st, moved)))
         return st, done
 
     st, _ = jax.lax.fori_loop(0, 4, act, (state, jnp.zeros(4, bool)))
-    return jax.lax.cond(winner(st) != -1, lambda s: s, lambda s: _residual(tab, s, rng["tiebreak"]), st)
+    res = _residual(tab, st, rng["tiebreak"])
+    return jax.tree.map(lambda p, q: jnp.where(winner(st) != -1, p, q), st, res)
 
 
 def _residual(tab, st, tie):
@@ -270,8 +287,8 @@ def _residual(tab, st, tie):
                 res = jnp.where((status == 3) & (kind == 2), jnp.maximum(mx // 8, 1), res)
                 res = jnp.where((status == 4) & (kind == 2), base * tox, res)
                 new = jnp.maximum(hp - res, 0)
-                s = {**s, "tox": s["tox"].at[mon].set(jnp.where(live, tox, s["tox"][mon]))}
-            return {**s, "hp": s["hp"].at[mon].set(jnp.where(live, new, hp))}
+                s = {**s, "tox": put(s["tox"], mon, jnp.where(live, tox, s["tox"][mon]))}
+            return {**s, "hp": put(s["hp"], mon, jnp.where(live, new, hp))}
         return body
 
     for kind in range(4):
@@ -290,7 +307,8 @@ def replace(state, choice):
     for a in range(4):
         mon = (a // 2) * 4 + jnp.maximum(choice[a], 0)
         ok = (choice[a] >= 0) & (st["hp"][st["active"][a]] == 0) & (st["hp"][mon] > 0) & ~(st["active"] == mon).any()
-        st = jax.lax.cond(ok, lambda s: _switch_in(s, a, mon), lambda s: s, st)
+        sw = _switch_in(st, a, mon)
+        st = jax.tree.map(lambda p, q: jnp.where(ok, p, q), sw, st)
     return st
 
 

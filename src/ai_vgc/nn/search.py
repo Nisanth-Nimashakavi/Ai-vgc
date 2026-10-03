@@ -38,6 +38,7 @@ import subprocess
 import threading
 import time
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from pathlib import Path
 
@@ -531,27 +532,18 @@ def position(battle: DoubleBattle, fmt: str, teams_dir: str, world: dict | None 
     return st
 
 
-class Bridge:
-    """A `sim_bridge.js` process for one Showdown checkout."""
+class _Worker:
+    """One `sim_bridge.js` process. Not thread-safe: the caller holds the Bridge's lock."""
 
-    def __init__(self, showdown: str | Path = "pokemon-showdown", timeout: float = 60.0):
-        self.showdown = showdown
-        self.timeout = timeout
-        # Searches run in worker threads (SearchPlayer), several battles at once: without this, two
-        # requests interleave on the one pipe, replies get mixed up (JSONDecodeError) and a timeout
-        # in one thread kills the process under the other.
-        self.lock = threading.RLock()  # re-entrant: a two-turn search holds it across its requests
+    def __init__(self, showdown: str | Path, timeout: float):
+        self.showdown, self.timeout = showdown, timeout
         self._start()
 
     def _start(self) -> None:
         self.proc = subprocess.Popen(["node", str(BRIDGE), str(self.showdown)], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, text=True, bufsize=1)
 
-    def _ask(self, req: dict) -> dict:
-        with self.lock:
-            return self._ask_locked(req)
-
-    def _ask_locked(self, req: dict) -> dict:
+    def ask(self, req: dict) -> dict:
         # A bridge that died (e.g. killed on a busy node) is restarted rather than failing
         # every later search in the run.
         if self.proc.poll() is not None:
@@ -572,10 +564,54 @@ class Bridge:
             raise RuntimeError(out["error"])
         return out
 
+
+class Bridge:
+    """`sim_bridge.js` processes for one Showdown checkout. Turn-1 playouts without `keep` are split
+    across `procs` processes (each simulation is independent, so more seeds cost wall time only
+    until the cores run out); everything else, including kept positions, uses the first one."""
+
+    def __init__(self, showdown: str | Path = "pokemon-showdown", timeout: float = 60.0, procs: int = 1):
+        self.showdown = showdown
+        self.timeout = timeout
+        # Searches run in worker threads (SearchPlayer), several battles at once: without this, two
+        # requests interleave on the one pipe, replies get mixed up (JSONDecodeError) and a timeout
+        # in one thread kills the process under the other.
+        self.lock = threading.RLock()  # re-entrant: a two-turn search holds it across its requests
+        self.workers = [_Worker(showdown, timeout) for _ in range(max(1, procs))]
+        self._threads = ThreadPoolExecutor(len(self.workers)) if len(self.workers) > 1 else None
+
+    @property
+    def proc(self) -> subprocess.Popen:
+        return self.workers[0].proc
+
+    def kill(self) -> None:
+        """Kill every process; each restarts on its next request."""
+        with self.lock:
+            for w in self.workers:
+                w.proc.kill()
+                w.proc.wait()
+
+    def _ask(self, req: dict) -> dict:
+        with self.lock:
+            return self.workers[0].ask(req)
+
     def run(self, state: dict, pairs: list[tuple[str, str]], seeds: list[int], keep: bool = False) -> list[dict]:
         """Play each pair once per seed. With `keep`, results that end on an ordinary move turn
         carry "next" ({"id", "request"}) and the bridge keeps that position for `cont`."""
-        return self._ask({"state": state, "pairs": pairs, "seeds": seeds, "keep": keep})["results"]
+        if keep or self._threads is None or len(pairs) < 2:
+            return self._ask({"state": state, "pairs": pairs, "seeds": seeds, "keep": keep})["results"]
+        # Results are pair-major, so contiguous chunks of pairs concatenate back in order.
+        n = min(len(self.workers), len(pairs))
+        size, extra = divmod(len(pairs), n)
+        chunks, i = [], 0
+        for j in range(n):
+            chunks.append(pairs[i:i + size + (j < extra)])
+            i += size + (j < extra)
+        with self.lock:
+            outs = list(self._threads.map(
+                lambda wc: wc[0].ask({"state": state, "pairs": wc[1], "seeds": seeds, "keep": False}),
+                zip(self.workers, chunks)))
+        return [r for out in outs for r in out["results"]]
 
     def cont(self, conts: list[dict]) -> list[list[dict]]:
         """Turn 2 from positions kept by the last `run(..., keep=True)`: each item is
@@ -588,7 +624,8 @@ class Bridge:
         return self._ask({"state": state, "dump": True})["dump"]
 
     def close(self) -> None:
-        self.proc.terminate()
+        for w in self.workers:
+            w.proc.terminate()
 
 
 def after(battle: DoubleBattle, lines: list[str]) -> DoubleBattle:
@@ -705,6 +742,22 @@ def values(model: Policy, battles: list[DoubleBattle], rating: float) -> np.ndar
     return torch.sigmoid(model.value(model.encode(b)[0])[:, 0]).numpy()
 
 
+def _playout_values(model: Policy, battle: DoubleBattle, res: list[dict], rating: float) -> np.ndarray:
+    """Win probability from our side after each one-turn playout in `res`: 1/0/0.5 for finished games,
+    the value head's after the simulated turn otherwise."""
+    v = np.full(len(res), np.nan)
+    live, idx = [], []
+    for i, r in enumerate(res):
+        if r["winner"]:
+            v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+        else:
+            live.append(after(battle, r["lines"]))
+            idx.append(i)
+    if live:
+        v[idx] = values(model, live, rating)
+    return v
+
+
 def _second_turn(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: DoubleBattle,
                  res: list[dict], world: dict | None, fmt: str, teams_dir: str, rating: float,
                  k2: int, opp_k2: int, seeds2: list[int]) -> np.ndarray:
@@ -780,11 +833,14 @@ _second_turn.expanded = _second_turn.nodes = _second_turn.sims = _second_turn.er
 def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: DoubleBattle,
            mask: np.ndarray, fmt: str, teams_dir: str, rating: float, k: int = 6, opp_k: int = 6,
            seeds: int = 2, prior: float = 0.0, n_worlds: int = 1, depth: int = 1, k2: int = 3,
-           opp_k2: int = 3, seeds2: int = 1) -> tuple[np.ndarray, dict] | None:
+           opp_k2: int = 3, seeds2: int = 1, refine: int = 0,
+           refine_seeds: int = 0) -> tuple[np.ndarray, dict] | None:
     """(our chosen action, details) by one-turn search, or None when the position can't be
     rebuilt. With closed team sheets the opponent's hidden sets are guessed `n_worlds` ways
     (`worlds`); each candidate is scored in every world and the scores averaged by how likely
     each world is, so a play has to hold up against the sets they commonly run, not just one.
+    With `refine` > 0 (one-turn search), the `refine` best candidates are simulated `refine_seeds`
+    more times each, in every world, after the first `seeds` pass over all of them.
     With `depth` 2, each turn-1 playout is scored after a second turn (`_second_turn`) instead
     of by the value head right after turn 1.
     `M` and `q` in the details are the most likely world's."""
@@ -795,7 +851,7 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
     choices = [DoublesEnv.action_to_order(a, battle, strict=False).message.removeprefix("/choose ")
                for a, _ in ours]
     seed_list = [int(s) for s in np.random.randint(1, 2**30, seeds)]
-    value, first, errors, sims = np.zeros(len(ours)), None, [], 0
+    value, per_world, errors, sims = np.zeros(len(ours)), [], [], 0
     for world, w in worlds(battle, teams_dir, n_worlds, fmt):
         state = position(battle, fmt, teams_dir, world)
         if state is None:
@@ -810,25 +866,35 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
                                  k2, opp_k2, seeds2_list)
         else:
             res = bridge.run(state, pairs, seed_list)
-            v = np.full(len(res), np.nan)
-            live, idx = [], []
-            for i, r in enumerate(res):
-                if r["winner"]:
-                    v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
-                else:
-                    live.append(after(battle, r["lines"]))
-                    idx.append(i)
-            if live:
-                v[idx] = values(model, live, rating)
+            v = _playout_values(model, battle, res, rating)
         M = v.reshape(len(ours), len(theirs), seeds).mean(-1)
         q = np.array([p for _, p in theirs])
         value += w * (M @ q)
         errors += [r["err"] for r in res if r["err"]]
         sims += len(res)
-        if first is None:
-            first = (M, q, [t for t, _ in theirs])
-    M, q, their_choices = first
-    score = value + prior * np.array([lp for _, lp in ours])
+        per_world.append([w, state, theirs, M, q, seeds])
+    logp = np.array([lp for _, lp in ours])
+    if refine and depth < 2 and len(ours) > refine:
+        # Stage 2: the candidates still in the running get `refine_seeds` more simulations against
+        # every reply in every world, so close calls aren't decided by a handful of rolls.
+        top = np.argsort(-(value + prior * logp))[:refine]
+        seeds_b = [int(x) for x in np.random.randint(1, 2**30, refine_seeds)]
+        value = np.zeros(len(ours))
+        for pw in per_world:
+            w, state, theirs, M, q, n = pw
+            pairs = [(choices[i], t) for i in top for t, _ in theirs]
+            res = bridge.run(state, pairs, seeds_b)
+            v = _playout_values(model, battle, res, rating)
+            extra = v.reshape(len(top), len(theirs), refine_seeds)
+            M = M.copy()
+            M[top] = (M[top] * n + extra.sum(-1)) / (n + refine_seeds)
+            pw[3] = M
+            errors += [r["err"] for r in res if r["err"]]
+            sims += len(res)
+        for w, _, _, M, q, _ in per_world:
+            value += w * (M @ q)
+    M, q, their_choices = per_world[0][3], per_world[0][4], [t for t, _ in per_world[0][2]]
+    score = value + prior * logp
     best = int(score.argmax())
     return ours[best][0], {"M": M, "q": q, "ours": choices, "theirs": their_choices,
                            "actions": np.stack([a for a, _ in ours]), "value": value,
@@ -842,13 +908,15 @@ class SearchPlayer(NNPlayer):
     def __init__(self, *args, opp_model: Policy | str | Path | None = None, fmt: str,
                  teams_dir: str | Path, showdown: str | Path = "pokemon-showdown", k: int = 6,
                  opp_k: int = 6, seeds: int = 2, prior: float = 0.0, worlds: int = 1, depth: int = 1,
-                 k2: int = 3, opp_k2: int = 3, seeds2: int = 1, **kwargs):
+                 k2: int = 3, opp_k2: int = 3, seeds2: int = 1, procs: int = 1, refine: int = 0,
+                 refine_seeds: int = 0, **kwargs):
         super().__init__(*args, battle_format=fmt, **kwargs)
         self.opp_model = load_policy(opp_model) if isinstance(opp_model, (str, Path)) else opp_model
         self.fmt, self.teams_dir = fmt, str(teams_dir)
-        self.bridge = Bridge(showdown)
+        self.bridge = Bridge(showdown, procs=procs)
         self.k, self.opp_k, self.seeds, self.prior, self.worlds = k, opp_k, seeds, prior, worlds
         self.depth, self.k2, self.opp_k2, self.seeds2 = depth, k2, opp_k2, seeds2
+        self.refine, self.refine_seeds = refine, refine_seeds
         self.searched = self.fallbacks = self.countered = 0
         self.sims = self.sim_errors = 0  # simulated pairings, and those the bridge failed on
         self.search_time = 0.0
@@ -889,15 +957,13 @@ class SearchPlayer(NNPlayer):
             out = await asyncio.to_thread(search, self.model, self.opp_model, self.bridge, battle, mask,
                                           self.fmt, self.teams_dir, self.rating, self.k, self.opp_k,
                                           self.seeds, self.prior, self.worlds, self.depth, self.k2,
-                                          self.opp_k2, self.seeds2)
+                                          self.opp_k2, self.seeds2, self.refine, self.refine_seeds)
         except Exception as e:  # a position the bridge can't handle: play the policy
             self.logger.warning("search failed on turn %s: %r", battle.turn, e)
             out = None
             self.failed_in_a_row += 1
             if self.failed_in_a_row >= 3:  # e.g. it loaded a half-rebuilt dist/: start a fresh one
-                with self.bridge.lock:
-                    self.bridge.proc.kill()
-                    self.bridge.proc.wait()
+                self.bridge.kill()
                 self.failed_in_a_row = 0
         else:
             self.failed_in_a_row = 0
