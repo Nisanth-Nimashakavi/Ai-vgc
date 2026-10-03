@@ -28,9 +28,13 @@ def tiebreak(log):
 
 
 def rng_for(turn):
-    return dict(rolls=jnp.full((4, 4), turn["roll"], jnp.int32), crits=jnp.zeros((4, 4), bool),
-                acc=jnp.zeros((4, 4), jnp.int32), stall=jnp.zeros(4, bool), sec=jnp.full((4, 4), turn["roll"], jnp.int32),
-                skip=jnp.full(4, turn["parSkip"], bool), tiebreak=tiebreak(turn["log"]))
+    from ai_vgc.gpusim.effects import CHANCE_KEYS
+    unknown = set(turn["chance"]) - set(CHANCE_KEYS)
+    assert not unknown, f"Showdown rolled chances the sim does not know yet: {sorted(unknown)}"
+    chance = {k: bool(turn["chance"].get(k, False)) for k in CHANCE_KEYS}
+    return dict(rolls=jnp.full((4, 4), turn["roll"], jnp.int32), acc=jnp.full((4, 4), turn["accRoll"], jnp.int32),
+                sec=jnp.full((4, 4), turn["roll"], jnp.int32),
+                chance={k.replace("/", "_"): v for k, v in chance.items()}, tiebreak=tiebreak(turn["log"]))
 
 
 def summarize(st, ids):
@@ -45,6 +49,7 @@ def summarize(st, ids):
     status = np.where(hp > 0, np.asarray(st["status"]), 0)
     pres = lambda k: (np.asarray(st[k]) > 0).astype(int).tolist()
     return dict(hp=hp.tolist(), status=status.tolist(), boosts=boosts.tolist(), active=active.tolist(), items=items,
+                pp=np.asarray(st["pp"]).tolist(),
                 weather=int(st["weather"]), terrain=int(st["terrain"]), tr=int(st["tr_t"] > 0),
                 tw=pres("tw_t"), reflect=pres("reflect_t"), ls=pres("ls_t"), av=pres("av_t"))
 
@@ -57,7 +62,7 @@ def expected(after):
         if hp[mon] > 0:
             boosts[mon] = after["boosts"][mon]
     return dict(hp=hp.tolist(), status=np.where(hp > 0, status, 0).tolist(), boosts=boosts.tolist(),
-                active=after["active"], items=after["items"], weather=after["weather"], terrain=after["terrain"], tr=after["tr"],
+                active=after["active"], items=after["items"], pp=after["pp"], weather=after["weather"], terrain=after["terrain"], tr=after["tr"],
                 tw=after["tw"], reflect=after["reflect"], ls=after["ls"], av=after["av"])
 
 
@@ -68,10 +73,16 @@ def test_games_match_showdown():
     step, replace, start = jax.jit(sim.step), jax.jit(sim.replace), jax.jit(sim.start)
     bad = n = 0
     for g in games:
-        st = start(tab, sim.make_state(g["teams"]))
+        st = start(tab, sim.make_state(g["teams"], genders=g["genders"]))
         assert (st["stats"] == np.array(g["stats"])).all(), "stat formula mismatch"
         for t, turn in enumerate(g["turns"]):
             n += 1
+            mine = np.asarray(sim.action_speeds(tab, st))
+            alive = np.asarray(st["hp"])[np.asarray(st["active"])] > 0
+            if (mine[alive] != np.array(turn["speeds"])[alive]).any():
+                bad += 1
+                print("SPEED MISMATCH turn", t, "want", turn["speeds"], "got", mine.tolist(), "alive", alive.tolist())
+                break
             st = step(tab, st, jnp.array(turn["actions"], jnp.int32), rng_for(turn))
             st = replace(tab, st, jnp.array(turn["replace"], jnp.int32))
             got, want = summarize(st, ids), expected(turn["after"])

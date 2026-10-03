@@ -73,7 +73,15 @@ class Tables:
                "mistyterrain": 12, "psychicterrain": 13}
         self.mv_field = np.array([fld.get(m["id"], 0) for m in mv], np.int32)
         self.mv_halve_grassy = np.array([m["id"] in ("earthquake", "bulldoze", "magnitude") for m in mv], bool)
-        self.mv_pp = np.array([m['pp'] if m.get('noPPBoosts') or m['id'] == 'trumpcard' else m['pp'] * 8 // 5 for m in mv], np.int32)
+        flag = lambda name: np.array([bool((m.get("flags") or {}).get(name)) for m in mv], bool)
+        self.mv_f = {n: flag(n) for n in ("punch", "bite", "contact", "pulse", "slicing", "sound", "wind", "bullet")}
+        self.mv_recoil = np.array([bool(m.get("recoil")) for m in mv], bool)
+        self.mv_has_sec = np.array([bool(m.get("secondaries")) for m in mv], bool)
+        self.mv_toxic = np.array([m['id'] == 'toxic' for m in mv], bool)
+        self.mv_acc_true = np.array([m['accuracy'] is True for m in mv], bool)
+        self.mv_ignore_ability = np.array([bool(m.get('ignoreAbility')) for m in mv], bool)
+        self.ab_breakable = np.array([False] + [bool((a.get('flags') or {}).get('breakable')) for a in t['abilities']], bool)
+        self.mv_pp = np.array([m['pp'] if m.get('noPPBoosts') else (4 * (min(m['pp'], 20) + 5) + 4) // 5 for m in mv], np.int32)  # Champions calculatePP (PP > 20 capped); fractional PP rounds up, as Showdown only checks for 0
         self.mv_protect = np.array([m["id"] in ("protect", "detect") for m in mv], bool)
         self.mv_blockable = np.array([bool((m.get("flags") or {}).get("protect")) for m in mv], bool)
         self.mv_fakeout = np.array([m["id"] == "fakeout" for m in mv], bool)
