@@ -30,6 +30,9 @@ class Tables:
         self.raw = t
         self.types = t["types"]
         self.chart = np.array(t["typeChart"], np.float32)  # [attacker, defender]
+        # abilities/items are indexed from 1; 0 means none
+        self.ability_ix = {a["id"]: i + 1 for i, a in enumerate(t["abilities"])}
+        self.item_ix = {x["id"]: i + 1 for i, x in enumerate(t["items"])}
         self.species_ix = {s["id"]: i for i, s in enumerate(t["species"])}
         self.move_ix = {m["id"]: i for i, m in enumerate(t["moves"])}
         sp, mv = t["species"], t["moves"]
@@ -70,6 +73,7 @@ class Tables:
                "mistyterrain": 12, "psychicterrain": 13}
         self.mv_field = np.array([fld.get(m["id"], 0) for m in mv], np.int32)
         self.mv_halve_grassy = np.array([m["id"] in ("earthquake", "bulldoze", "magnitude") for m in mv], bool)
+        self.mv_pp = np.array([m['pp'] if m.get('noPPBoosts') or m['id'] == 'trumpcard' else m['pp'] * 8 // 5 for m in mv], np.int32)
         self.mv_protect = np.array([m["id"] in ("protect", "detect") for m in mv], bool)
         self.mv_blockable = np.array([bool((m.get("flags") or {}).get("protect")) for m in mv], bool)
         self.mv_fakeout = np.array([m["id"] == "fakeout" for m in mv], bool)

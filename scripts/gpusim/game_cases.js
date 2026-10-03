@@ -8,6 +8,7 @@ const {Dex} = require(path.join(SD, 'dist/sim'));
 const dex = Dex.mod('champions');
 const N = +process.argv[2] || 200, MAX_TURNS = +process.argv[3] || 8;
 let seed = +process.env.SEED || 4242;
+const pick = a => a[rnd(a.length)];
 const rnd = n => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return (seed >> 8) % n; };
 const species = dex.species.all().filter(s => !s.isNonstandard && !s.battleOnly && !s.requiredItem && !s.forme.match(/Mega|Gmax|Totem/));
 const STAT = ['atk', 'def', 'spa', 'spd', 'spe'], STATUS = ['brn', 'par', 'psn', 'tox'];
@@ -32,16 +33,17 @@ const fieldMove = m => FIELD.includes(m.id);
 const SPECIAL = ['protect', 'detect', 'fakeout']; // implemented by id, not by the generic filters
 const moves = dex.moves.all().filter(m => damaging(m) || statusMove(m) || fieldMove(m) || SPECIAL.includes(m.id));
 const fieldMoves = moves.filter(fieldMove);
+const IMPL = JSON.parse(require('fs').readFileSync(path.resolve(__dirname, '../../data/gpusim/implemented.json')));
 const natures = ['Adamant', 'Modest', 'Bold', 'Calm', 'Hardy', 'Jolly', 'Timid', 'Impish', 'Careful'];
 const wcode = {sunnyday: 1, raindance: 2, sandstorm: 3, snowscape: 4, snow: 4}, tcode = {electricterrain: 1, grassyterrain: 2, mistyterrain: 3, psychicterrain: 4};
 
 const snapshot = (b, names) => {
 	const mons = b.sides.flatMap(s => s.pokemon);
 	const id = p => +p.name.slice(1) + p.side.n * 4; // names are m0..m3 per side
-	const hp = Array(8), status = Array(8), boosts = Array(8);
-	for (const p of mons) { hp[id(p)] = p.hp; status[id(p)] = p.status || ''; boosts[id(p)] = STAT.map(k => p.boosts[k]); }
+	const hp = Array(8), status = Array(8), boosts = Array(8), items = Array(8);
+	for (const p of mons) { hp[id(p)] = p.hp; status[id(p)] = p.status || ''; boosts[id(p)] = STAT.map(k => p.boosts[k]); items[id(p)] = p.item || ''; }
 	const side = (s, c) => s.sideConditions[c] ? 1 : 0;
-	return {hp, status, boosts, active: b.sides.flatMap(s => s.active.map(p => id(p))),
+	return {hp, status, boosts, items, active: b.sides.flatMap(s => s.active.map(p => id(p))),
 		weather: wcode[b.field.weather] || 0, terrain: tcode[b.field.terrain] || 0, tr: b.field.pseudoWeather.trickroom ? 1 : 0,
 		tw: b.sides.map(s => side(s, 'tailwind')), reflect: b.sides.map(s => side(s, 'reflect')),
 		ls: b.sides.map(s => side(s, 'lightscreen')), av: b.sides.map(s => side(s, 'auroraveil'))};
@@ -51,9 +53,13 @@ const out = [];
 while (out.length < N) {
 	const mk = k => {
 		const s = species[rnd(species.length)];
-		const ms = [0, 1, 2].map(() => moves[rnd(moves.length)].id);
-		if (rnd(3) === 0) ms.push(fieldMoves[rnd(fieldMoves.length)].id); else ms.push(moves[rnd(moves.length)].id);
-		return {species: s.name, name: 'm' + k, ability: 'Illuminate', nature: natures[rnd(natures.length)], level: 50, moves: ms,
+		const ms = [];  // legal teams never repeat a move
+		while (ms.length < 4) {
+			const pool = ms.length === 3 && rnd(3) === 0 ? fieldMoves : moves;  // last slot is often a field move
+			const id = pick(pool).id;
+			if (!ms.includes(id)) ms.push(id);
+		}
+		return {species: s.name, name: 'm' + k, ability: rnd(2) ? pick(IMPL.abilities) : 'Illuminate', item: rnd(2) ? pick(IMPL.items) : '', nature: natures[rnd(natures.length)], level: 50, moves: ms,
 			evs: {hp: rnd(33), atk: rnd(33), def: rnd(33), spa: rnd(33), spd: rnd(33), spe: rnd(33)}};
 	};
 	const teams = [0, 1].map(() => [0, 1, 2, 3].map(mk));
@@ -70,7 +76,7 @@ while (out.length < N) {
 	const mons = b.sides.flatMap(s => s.pokemon);
 	const mid = p => +p.name.slice(1) + p.side.n * 4;
 	game.stats = Array(8);
-	for (const p of mons) game.stats[mid(p)] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'].map(k => k === 'hp' ? p.maxhp : p.getStat(k, false, true));
+	for (const p of mons) game.stats[mid(p)] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'].map(k => k === 'hp' ? p.maxhp : p.getStat(k, true, true));
 	let ok = true;
 	for (let turn = 0; turn < MAX_TURNS && !b.ended; turn++) {
 		roll = rnd(16); parSkip = rnd(2) === 1;
@@ -87,7 +93,7 @@ while (out.length < N) {
 					const q = bench[rnd(bench.length)]; takenSwitch.add(q);
 					parts.push(`switch ${side.pokemon.indexOf(q) + 1}`); actions.push([1, +q.name.slice(1), 0]); continue;
 				}
-				const req = side.activeRequest.active[j].moves, enabled = [0, 1, 2, 3].filter(x => !req[x].disabled);
+				const req = side.activeRequest.active[j].moves, enabled = [0, 1, 2, 3].filter(x => req.some(r => r.id === p.moves[x] && !r.disabled));
 				if (!enabled.length) { parts.push('move 1'); actions.push([0, 0, 0]); continue; } // Struggle
 				const slot = enabled[rnd(enabled.length)], m = dex.moves.get(p.moves[slot]);
 				const alive = [0, 1].filter(x => foes[x].hp > 0);
@@ -115,6 +121,7 @@ while (out.length < N) {
 			}
 		}
 		const log = b.log.slice(logStart).join('\n');
+		if (log.includes('Struggle')) { ok = false; break; } // PP / forced Struggle not modelled yet
 		if (!b.ended && b.sides.some(s => s.requestState === 'switch')) { ok = false; break; }
 		game.turns.push({actions, roll, parSkip, replace, log, after: snapshot(b)});
 	}

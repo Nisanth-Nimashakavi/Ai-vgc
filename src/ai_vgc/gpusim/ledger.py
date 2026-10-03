@@ -6,11 +6,14 @@ prints the table and exits non-zero while anything is TODO, so nothing can be sk
 import sys
 from collections import Counter
 
+from . import effects as E
 from . import tables as T
 
-# ability/item id -> test that covers it (a pytest node id or a short note). Filled in as each lands.
-DONE_ABILITIES: dict = {}
-DONE_ITEMS: dict = {}
+# An id is done once it is in effects.py: tests/gpusim/test_game.py draws random teams from that list, fails if
+# any listed id never appears (test_every_implemented_effect_is_exercised), and diffs every turn against Showdown.
+TEST = "tests/gpusim/test_game.py"
+DONE_ABILITIES: dict = dict.fromkeys(E.ABILITIES, TEST)
+DONE_ITEMS: dict = dict.fromkeys(E.ITEMS, TEST)
 
 
 def rows(t=None):
