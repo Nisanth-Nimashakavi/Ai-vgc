@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 # The neural network (src/ai_vgc/nn). On the GPU server: `uv sync --extra nn`.
 nn = ["torch>=2.5", "tensorboard>=2.18", "scipy>=1.14"]
+gpusim = ["jax>=0.4.35", "numpy"]
 # Result charts (notebooks/results.ipynb), laptop only: `uv sync --extra nn --extra viz`.
 viz = ["jupyterlab>=4", "pandas>=2.2", "matplotlib>=3.9"]
 
