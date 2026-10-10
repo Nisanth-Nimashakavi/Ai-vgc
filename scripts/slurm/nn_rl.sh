@@ -1,32 +1,68 @@
 #!/bin/bash -l
-# Self-play RL (PPO) from the imitation policy: 1 GPU for the learner, CPU workers
-# play the games on local Showdown servers. Extra arguments go to ai_vgc.nn.rl:
-#   cd ~/ai-vgc && sbatch scripts/slurm/archive/mb-bo3-ppo-v1.sh
-#   cd ~/ai-vgc && sbatch scripts/slurm/archive/mb-bo3-ppo-v1.sh --resume      # continue after a timeout
-# Double oracle, continuing from the first RL run (do_rl):
-#   cd ~/ai-vgc && sbatch scripts/slurm/archive/mb-bo3-ppo-v1.sh --init data/models/archive/mb-bo3-ppo-v1.pt --ref data/models/archive/mb-bo3-bc-v1.pt \
-#     --pool-init data/models/archive/mb-bo3-bc-v1.pt data/models/archive/mb-bo3-ppo-v1_snapshots/iter_0{050,100,200}.pt data/models/archive/mb-bo3-ppo-v1.pt \
-#     --mix self:0.3,nash:0.7 --out data/models/archive/mb-bo3-do-v1.pt --iters 200
-# Reg M-C, R-NaD from the retrained BC model:
-#   cd ~/ai-vgc && sbatch scripts/slurm/archive/mb-bo3-ppo-v1.sh --init data/models/all-bo3-bc-v2.pt --out data/models/mc-bo1-rnad-v3.pt \
-#     --reg-every 20 --format gen9championsvgc2026regmc --teams data/teams/reg_mc --showdown pokemon-showdown-mc
-# Specialise on one team (the learner always plays MC196; opponents draw from the pool):
-#   cd ~/ai-vgc && sbatch --exclude=ilab1 scripts/slurm/archive/mb-bo3-ppo-v1.sh --init data/models/mc-bo1-rnad-v3.pt --ref data/models/mc-bo1-rnad-v3.pt \
-#     --out data/models/mc-bo1-rnad-v3-mc196-selfmix.pt --my-team data/teams/reg_mc/MC196.txt --reg-every 20 --iters 100 \
-#     --format gen9championsvgc2026regmc --teams data/teams/reg_mc --showdown pokemon-showdown-mc
-# Bo3 (games 2-3 see the series so far; each game is its own episode), from the series model:
-#   cd ~/ai-vgc && sbatch --exclude=ilab1 scripts/slurm/archive/mb-bo3-ppo-v1.sh --init data/models/all-bo3-bc-v4-series.pt \
-#     --out data/models/mc-bo3-rnad-v5.pt --reg-every 20 --format gen9championsvgc2026regmcbo3 \
-#     --teams data/teams/reg_mc --showdown pokemon-showdown-mc
 #SBATCH --job-name=vgc-nn-rl
 #SBATCH --output=logs/%x-%j.out
-#SBATCH -G 1
-#SBATCH --mem=96G
+#SBATCH -G 12
+#SBATCH --mem=192G
 #SBATCH --time=24:00:00
 
 cd ~/ai-vgc
 nvidia-smi -L
-node --version
-# One BLAS/torch thread per worker process: many threads each hit the 2000-process limit.
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
 ~/.local/bin/uv run --extra nn python -m ai_vgc.nn.rl "$@"
+rc=$?
+
+# rl.py exits 42 when a GPU got close to --mem-limit: it already checkpointed this
+# iteration, so resubmit --resume with fewer --vector-workers/--servers instead of
+# risking an OOM crash later in the run.
+if [ "$rc" -eq 42 ]; then
+    info=$(scontrol show job "$SLURM_JOB_ID")
+    gpus=$(echo "$info" | grep -oP 'gres/gpu=\K[0-9]+' | head -1)
+    mem=$(echo "$info" | grep -oP 'Mem[A-Za-z]*=\K[0-9]+[A-Za-z]*' | head -1)
+    nodelist=$(echo "$info" | grep -oP 'BatchHost=\K\S+' | head -1)
+    timelimit=$(echo "$info" | grep -oP 'TimeLimit=\K\S+' | head -1)
+    jobname=$(echo "$info" | grep -oP 'JobName=\K\S+' | head -1)
+
+    args=("$@")
+    new_args=()
+    has_resume=0
+    for i in "${!args[@]}"; do
+        case "${args[$i]}" in
+            --vector-workers)
+                old=${args[$((i+1))]}
+                new=$(( old * 7 / 10 ))
+                [ "$new" -lt 1 ] && new=1
+                new_args+=("--vector-workers" "$new")
+                ;;
+            --servers)
+                old=${args[$((i+1))]}
+                new=$(( old * 7 / 10 ))
+                [ "$new" -lt 1 ] && new=1
+                new_args+=("--servers" "$new")
+                ;;
+            --native-actors)
+                old=${args[$((i+1))]}
+                new=$(( old * 7 / 10 ))
+                [ "$new" -lt 1 ] && new=1
+                new_args+=("--native-actors" "$new")
+                ;;
+            --resume) has_resume=1; new_args+=("${args[$i]}") ;;
+            *)
+                # skip values already consumed above
+                prev="${args[$((i-1))]}"
+                [ "$prev" = "--vector-workers" ] && continue
+                [ "$prev" = "--servers" ] && continue
+                [ "$prev" = "--native-actors" ] && continue
+                new_args+=("${args[$i]}")
+                ;;
+        esac
+    done
+    [ "$has_resume" -eq 0 ] && new_args+=("--resume")
+
+    echo "mem-limit hit: resubmitting with reduced workers (${new_args[*]})"
+    sbatch -G "$gpus" --mem="$mem" --time="$timelimit" --nodelist="$nodelist" \
+        --job-name="$jobname" --output="logs/${jobname}-%j.out" \
+        "$0" "${new_args[@]}"
+    exit 0
+fi
+
+exit $rc
