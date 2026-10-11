@@ -71,7 +71,7 @@ def main() -> None:
     )
     print(
         "slots completed games/s normal-states/s replacement/s preview/s "
-        "mean-turns elapsed_s export% sample% step% reset% preview% peak_cuda_mb",
+        "mean-turns elapsed_s export% sample% repl% step% reset% preview% peak_cuda_mb",
         flush=True,
     )
     for slots in args.slots:
@@ -101,7 +101,7 @@ def main() -> None:
             "replacement_states": 0.0, "preview_states": 0.0,
             "mean_turns_weighted": 0.0, "elapsed_s": 0.0,
             "export_s": 0.0, "sample_s": 0.0, "step_s": 0.0,
-            "reset_s": 0.0, "preview_s": 0.0,
+            "reset_s": 0.0, "preview_s": 0.0, "replacement_s": 0.0,
         }
         if args.device.startswith("cuda"):
             torch.cuda.reset_peak_memory_stats(torch.device(args.device))
@@ -120,6 +120,7 @@ def main() -> None:
             totals["elapsed_s"] += elapsed
             for key in ("export_s", "step_s", "reset_s", "preview_s"):
                 totals[key] += float(stats[key])
+            totals["replacement_s"] += float(stats.get("replacement_s", 0))
             totals["sample_s"] += float(stats.get("sample_s", 0))
             totals["sample_s"] += float(stats.get("learner_sample_s", 0))
             totals["sample_s"] += float(stats.get("opponent_sample_s", 0))
@@ -127,7 +128,7 @@ def main() -> None:
         elapsed = totals["elapsed_s"]
         phase_pct = {
             key: 100.0 * totals[key] / elapsed if elapsed else 0.0
-            for key in ("export_s", "sample_s", "step_s", "reset_s", "preview_s")
+            for key in ("export_s", "sample_s", "replacement_s", "step_s", "reset_s", "preview_s")
         }
         peak = (torch.cuda.max_memory_allocated(torch.device(args.device)) / 2**20
                 if args.device.startswith("cuda") else 0.0)
@@ -141,6 +142,7 @@ def main() -> None:
             f"{totals['preview_states'] / elapsed:9.1f} "
             f"{mean_turns:10.1f} {elapsed:9.2f} "
             f"{phase_pct['export_s']:6.1f} {phase_pct['sample_s']:7.1f} "
+            f"{phase_pct['replacement_s']:6.1f} "
             f"{phase_pct['step_s']:5.1f} {phase_pct['reset_s']:6.1f} "
             f"{phase_pct['preview_s']:8.1f} {peak:12.1f}",
             flush=True,

@@ -666,26 +666,21 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         if not len(game_indices):
             return
         source = packed_policy_arrays(
-            battles.policy_tensors(self.config.rating, preview=True)
+            battles.policy_tensors(self.config.rating, preview=True, indices=game_indices.tolist())
         )
         states = len(game_indices) * 2
         selected = np.empty((states, 0), dtype=np.uint8)
-        rows = np.empty(states, dtype=np.intp)
-        rows[::2] = 2 * game_indices
-        rows[1::2] = rows[::2] + 1
+        local_rows = np.arange(states, dtype=np.intp)
+        local_game_indices = np.arange(len(game_indices), dtype=np.intp)
         for _ in range(2):
-            # `sample_packed_batch` gathers its rows from the full packed
-            # export. Override only those rows; mature slots keep their normal
-            # masks and are never sampled in this preview call.
             preview = dict(source)
-            mask = source["mask"].copy()
-            mask[rows] = False
-            mask[rows, :, 1:7] = True
+            mask = np.zeros((states, 2, N_ACT), dtype=bool)
+            mask[:, :, 1:7] = True
             for prior in selected.T:
-                mask[rows, :, prior] = False
+                mask[local_rows, :, prior] = False
             preview["mask"] = mask
             obs, actions, logp, values = self._sample_packed(
-                model, preview, game_indices, compile_inference=False,
+                model, preview, local_game_indices, compile_inference=False,
             )
             if np.any((actions < 1) | (actions > 6)) or np.any(actions[:, 0] == actions[:, 1]):
                 raise RuntimeError("packed preview emitted an invalid or duplicate team slot")
@@ -720,11 +715,11 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         stores["logp"].append(logp[state_rows].astype(np.float32, copy=False))
         stores["value"].append(values[state_rows].astype(np.float32, copy=False))
         stores["preview"].append(np.full(len(state_rows), preview, dtype=bool))
-        rows = np.arange(len(game_indices), dtype=np.intp) + sum(
-            len(part) for part in stores["logp"][:-1]
-        )
-        for game, row in zip(game_indices, rows):
-            episode_rows[2 * int(game) + side].append(int(row))
+        total_rows = stores.setdefault("_total_rows", [0])
+        base_row = total_rows[0]
+        total_rows[0] += len(state_rows)
+        for game, row in zip(game_indices, range(base_row, base_row + len(state_rows))):
+            episode_rows[2 * int(game) + side].append(row)
 
     @staticmethod
     def _rollout_episodes(
@@ -737,7 +732,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         values = {
             key: np.concatenate(parts, axis=0)
             for key, parts in stores.items()
-            if parts
+            if parts and key != "_total_rows"
         }
         episodes: list[tuple[list[dict], float]] = []
         rewards: list[float] = []
@@ -772,7 +767,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         retain their established assumptions: player one then player two for
         each game, with `last` marking each individual player episode.
         """
-        values = {key: np.concatenate(parts, axis=0) for key, parts in stores.items() if parts}
+        values = {key: np.concatenate(parts, axis=0) for key, parts in stores.items() if parts and key != "_total_rows"}
         order: list[int] = []
         rewards: list[float] = []
         row_rewards: list[float] = []
@@ -838,7 +833,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                 "last": np.empty((0,), dtype=bool),
             }
             return empty, []
-        values = {key: np.concatenate(parts, axis=0) for key, parts in stores.items() if parts}
+        values = {key: np.concatenate(parts, axis=0) for key, parts in stores.items() if parts and key != "_total_rows"}
         order: list[int] = []
         rewards: list[float] = []
         row_rewards: list[float] = []
@@ -867,13 +862,14 @@ class NativeBatchSelfPlay(NativeSelfPlay):
     def _merge_step_results(terminal: list[str], raw: bytes) -> np.ndarray:
         """Merge compact Rust status codes into the persistent batch state."""
         outcomes = ("inactive", "continue", "p1_win", "p2_win", "tie")
-        if len(raw) != len(terminal):
-            raise RuntimeError(f"native step returned {len(raw)} results for {len(terminal)} battles")
-        for game, code in enumerate(raw):
+        raw_arr = np.frombuffer(raw, dtype=np.uint8)
+        if len(raw_arr) != len(terminal):
+            raise RuntimeError(f"native step returned {len(raw_arr)} results for {len(terminal)} battles")
+        for game in np.flatnonzero(raw_arr > 1):
+            code = int(raw_arr[game])
             if code >= len(outcomes):
                 raise RuntimeError(f"native step returned unknown result code {code}")
-            if code:
-                terminal[game] = outcomes[code]
+            terminal[game] = outcomes[code]
         return np.asarray([result == "continue" for result in terminal], dtype=bool)
 
     def _step_packed(
@@ -906,9 +902,11 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             indices = np.flatnonzero(active & replacing)
             if not len(indices):
                 break
-            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
+            packed = packed_policy_arrays(
+                battles.policy_tensors(self.config.rating, indices=indices.tolist())
+            )
             obs, actions, logp, values = self._sample_packed(
-                model, packed, indices, compile_inference=False,
+                model, packed, np.arange(len(indices)), compile_inference=False,
             )
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 0)
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 1)
@@ -1058,9 +1056,6 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             if not len(finished):
                 continue
 
-            # `observe` is off the decision path and runs only for terminated
-            # slots, so it cannot create a tail-batch performance regression.
-            final = battles.observe()
             for index in finished:
                 game = int(index)
                 result = terminal[game]
@@ -1068,7 +1063,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                 completed.append((episode_rows[2 * game], reward))
                 completed.append((episode_rows[2 * game + 1], 1.0 - reward if reward != 0.5 else 0.5))
                 completed_games.append(reward)
-                completed_turns.append(int(final[game]["turn"]))
+                completed_turns.append(int(slot_turns[game]))
                 episode_rows[2 * game] = []
                 episode_rows[2 * game + 1] = []
                 terminal[game] = "continue"
@@ -1142,7 +1137,9 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             obs: dict[str, np.ndarray], actions: np.ndarray, logp: np.ndarray,
             values: np.ndarray, indices: np.ndarray, preview: bool = False,
         ) -> None:
-            base = sum(len(part) for part in stores["logp"])
+            total_rows = stores.setdefault("_total_rows", [0])
+            base = total_rows[0]
+            total_rows[0] += len(indices)
             for key in _PACKED_KEYS:
                 stores[key].append(obs[key])
             stores["action"].append(actions.astype(np.int16, copy=False))
@@ -1153,10 +1150,11 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                 side = int(learner_sides[game])
                 episode_rows[2 * int(game) + side].append(base + row)
 
-        def sample_sides(packed: dict[str, np.ndarray], indices: np.ndarray):
+        def sample_sides(packed: dict[str, np.ndarray], indices: np.ndarray, is_subset: bool = False):
             indices = np.asarray(indices, dtype=np.intp)
-            learner_rows = 2 * indices + learner_sides[indices]
-            opponent_rows = 2 * indices + (1 - learner_sides[indices])
+            local_indices = np.arange(len(indices), dtype=np.intp) if is_subset else indices
+            learner_rows = 2 * local_indices + learner_sides[indices]
+            opponent_rows = 2 * local_indices + (1 - learner_sides[indices])
             t0 = time.perf_counter()
             learner_obs, learner_actions, learner_logp, learner_values = sample_packed_batch(
                 learner, packed, learner_rows, greedy=self.config.greedy,
@@ -1194,9 +1192,11 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                     break
                 replacement_states += len(indices)
                 t0 = time.perf_counter()
-                packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
+                packed = packed_policy_arrays(
+                    battles.policy_tensors(self.config.rating, indices=indices.tolist())
+                )
                 timing["export_s"] += time.perf_counter() - t0
-                lo, la, ll, lv, p1, p2 = sample_sides(packed, indices)
+                lo, la, ll, lv, p1, p2 = sample_sides(packed, indices, is_subset=True)
                 append_learner(lo, la, ll, lv, indices)
                 t0 = time.perf_counter()
                 active = self._step_packed(battles, p1, p2, indices, terminal)
@@ -1206,21 +1206,23 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         def preview(indices: np.ndarray) -> None:
             """Select four with both policies but keep only learner decisions."""
             indices = np.asarray(indices, dtype=np.intp)
-            source = packed_policy_arrays(battles.policy_tensors(self.config.rating, preview=True))
-            all_rows = np.empty(len(indices) * 2, dtype=np.intp)
-            all_rows[::2] = 2 * indices
-            all_rows[1::2] = all_rows[::2] + 1
-            picked = np.empty((len(indices) * 2, 0), dtype=np.uint8)
+            source = packed_policy_arrays(
+                battles.policy_tensors(self.config.rating, preview=True, indices=indices.tolist())
+            )
+            n_sub = len(indices)
+            states = n_sub * 2
+            local_rows = np.arange(states, dtype=np.intp)
+            local_indices = np.arange(n_sub, dtype=np.intp)
+            picked = np.empty((states, 0), dtype=np.uint8)
             for _ in range(2):
                 masked = dict(source)
-                mask = source["mask"].copy()
-                mask[all_rows] = False
-                mask[all_rows, :, 1:7] = True
+                mask = np.zeros((states, 2, N_ACT), dtype=bool)
+                mask[:, :, 1:7] = True
                 for prior in picked.T:
-                    mask[all_rows, :, prior] = False
+                    mask[local_rows, :, prior] = False
                 masked["mask"] = mask
-                learner_rows = 2 * indices + learner_sides[indices]
-                opponent_rows = 2 * indices + (1 - learner_sides[indices])
+                learner_rows = 2 * local_indices + learner_sides[indices]
+                opponent_rows = 2 * local_indices + (1 - learner_sides[indices])
                 t0 = time.perf_counter()
                 lo, la, ll, lv = sample_packed_batch(
                     learner, masked, learner_rows, greedy=self.config.greedy,
@@ -1234,7 +1236,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                 )
                 timing["opponent_sample_s"] += time.perf_counter() - t0
                 append_learner(lo, la, ll, lv, indices, preview=True)
-                physical = np.empty((len(indices) * 2, 2), dtype=np.uint8)
+                physical = np.empty((states, 2), dtype=np.uint8)
                 learner_is_p1 = learner_sides[indices] == 0
                 physical[0::2][learner_is_p1] = la[learner_is_p1]
                 physical[1::2][learner_is_p1] = oa[learner_is_p1]
@@ -1270,7 +1272,6 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             finished = np.flatnonzero(~active | cutoff)
             if not len(finished):
                 continue
-            final = battles.observe()
             for index in finished:
                 game = int(index)
                 p1_reward = 1.0 if terminal[game] == "p1_win" else 0.0 if terminal[game] == "p2_win" else 0.5
@@ -1279,7 +1280,7 @@ class NativeBatchSelfPlay(NativeSelfPlay):
                 completed.append((episode_rows[2 * game + side], reward))
                 completed_rewards.append(reward)
                 (learner_p1_rewards if side == 0 else learner_p2_rewards).append(reward)
-                completed_turns.append(int(final[game]["turn"]))
+                completed_turns.append(int(slot_turns[game]))
                 episode_rows[2 * game + side] = []
                 terminal[game] = "continue"
                 slot_turns[game] = 0

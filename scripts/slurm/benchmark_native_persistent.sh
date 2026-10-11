@@ -43,7 +43,7 @@ TEAMS="${TEAMS:-data/teams/reg_mb}"
 FORMAT="${FORMAT:-gen9championsvgc2026regmb}"
 # Start with a bounded diagnostic sweep. Override these at submission only
 # after its results prove that a larger shape fits the target accelerator.
-SLOTS="${SLOTS:-64 128 256}"
+SLOTS="${SLOTS:-256 512 1024}"
 HORIZON="${HORIZON:-16}"
 WARMUP="${WARMUP:-1}"
 REPEATS="${REPEATS:-2}"

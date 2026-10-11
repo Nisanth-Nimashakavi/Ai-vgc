@@ -25,3 +25,8 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 poke-env = { git = "https://github.com/cameronangliss/poke-env.git", rev = "vgc-bench" }
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:The given NumPy array is not writable:UserWarning",
+]

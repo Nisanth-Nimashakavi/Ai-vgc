@@ -44,8 +44,12 @@ import os
 import random
 import re
 import time
+import warnings
 import weakref
+
+warnings.filterwarnings("ignore", message=r".*The given NumPy array is not writable.*")
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -97,25 +101,139 @@ def load_policy(path: str | Path, device: str = "cpu") -> Policy:
     return model.to(device).eval()
 
 
+# Optional: compile model for faster inference (PyTorch 2.0+)
+_COMPILED_MODELS: dict[int, Policy] = {}
+
+
+def _get_compiled_model(model: Policy) -> Policy:
+    """Get or create compiled version of model for inference."""
+    model_id = id(model)
+    if model_id not in _COMPILED_MODELS:
+        if os.environ.get("NESSIE_NO_COMPILE"):
+            _COMPILED_MODELS[model_id] = model
+            return _COMPILED_MODELS[model_id]
+        try:
+            # Use reduce-overhead mode for inference
+            _COMPILED_MODELS[model_id] = torch.compile(model, mode="reduce-overhead", fullgraph=True)
+            print(f"Model compiled with torch.compile (reduce-overhead)", flush=True)
+        except Exception as e:
+            print(f"torch.compile failed, using eager: {e}", flush=True)
+            _COMPILED_MODELS[model_id] = model
+    return _COMPILED_MODELS[model_id]
+
+
 @torch.no_grad()
 def sample_batch(model: Policy, obs: list[dict[str, np.ndarray]],
-                 greedy: list[bool]) -> list[tuple[np.ndarray, float, float]]:
+                 greedy: list[bool], use_fp16: bool = True, use_compile: bool = True) -> list[tuple[np.ndarray, float, float]]:
     """(action [2], joint log-prob, value logit) for each state; obs carry their "mask"."""
-    b = {k: torch.from_numpy(np.stack([o[k] for o in obs])) for k in obs[0]}
+    # Use compiled model if requested
+    if use_compile:
+        model = _get_compiled_model(model)
+    
+    device = next(model.parameters()).device
+    b = {k: torch.from_numpy(np.stack([o[k] for o in obs])).to(device) for k in obs[0]}
     m = b["mask"]
-    g = torch.tensor(greedy)
-    enc = model.encode(b)
-
-    def pick(logits: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        logp = F.log_softmax(logits, -1)
-        a = torch.where(g, logp.argmax(-1), torch.multinomial(logp.exp(), 1)[:, 0])
-        return a, logp.gather(1, a[:, None])[:, 0]
-
-    a0, lp0 = pick(masked(model.slot_logits(enc, b, 0), m[:, 0]))
-    a1, lp1 = pick(masked(model.slot_logits(enc, b, 1, a0), slot_b_mask(m[:, 1], a0)))
-    v = model.value(enc[0])[:, 0]
-    acts = torch.stack([a0, a1], 1).numpy()
+    g = torch.tensor(greedy, device=device)
+    
+    # FP16 autocast for faster inference on GPU
+    if use_fp16 and device.type == "cuda":
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            enc = model.encode(b)
+            a0, lp0 = _pick_slot(model, enc, b, m, g, 0)
+            a1, lp1 = _pick_slot(model, enc, b, m, g, 1, a0)
+            v = model.value(enc[0])[:, 0]
+    else:
+        enc = model.encode(b)
+        a0, lp0 = _pick_slot(model, enc, b, m, g, 0)
+        a1, lp1 = _pick_slot(model, enc, b, m, g, 1, a0)
+        v = model.value(enc[0])[:, 0]
+    acts = torch.stack([a0, a1], 1).cpu().numpy()
     return [(acts[i], (lp0[i] + lp1[i]).item(), v[i].item()) for i in range(len(obs))]
+
+
+@torch.no_grad()
+def sample_packed_batch(
+    model: Policy,
+    packed: dict[str, np.ndarray],
+    row_indices: np.ndarray,
+    greedy: bool = False,
+    use_fp16: bool = True,
+    use_compile: bool = False,
+) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray, np.ndarray]:
+    """Sample policy actions directly from contiguous native-engine buffers.
+
+    Unlike :func:`sample_batch`, this takes whole field arrays emitted by
+    ``BattleBatch.policy_tensors`` and gathers the live rows once per field.
+    That avoids constructing one Python dict per state and the subsequent
+    ``np.stack`` for every model input.  The returned CPU arrays are compact
+    rollout records, so callers can retain them for PPO without holding the
+    full Rust-exported byte payload alive.
+    """
+    if use_compile:
+        model = _get_compiled_model(model)
+    indices = np.asarray(row_indices, dtype=np.intp)
+    if indices.ndim != 1 or not len(indices):
+        raise ValueError("packed inference needs at least one one-dimensional row index")
+
+    # Fast path: when sampling all rows in the packed batch in natural order,
+    # avoid re-allocating and copying all 11 array buffers on CPU.
+    mask_arr = packed["mask"]
+    n_states = len(mask_arr)
+    if len(indices) == n_states and indices[0] == 0 and indices[-1] == n_states - 1:
+        batch = packed
+    else:
+        batch = {key: np.ascontiguousarray(value[indices]) for key, value in packed.items()}
+
+    source_mask = batch["mask"]
+    if not source_mask.any(axis=2).all():
+        empty = np.flatnonzero(~source_mask.any(axis=2))
+        row, slot = divmod(int(empty[0]), 2)
+        raise RuntimeError(f"native policy mask is empty for packed row {row}, slot {slot}")
+
+    device = next(model.parameters()).device
+    b = {key: torch.from_numpy(value).to(device, non_blocking=device.type == "cuda")
+         for key, value in batch.items()}
+    m = b["mask"]
+    g = torch.full((len(indices),), greedy, dtype=torch.bool, device=device)
+
+    if use_fp16 and device.type == "cuda":
+        with torch.autocast(device_type="cuda", dtype=torch.float16):
+            enc = model.encode(b)
+            a0, lp0 = _pick_slot(model, enc, b, m, g, 0)
+            a1, lp1 = _pick_slot(model, enc, b, m, g, 1, a0)
+            value = model.value(enc[0])[:, 0]
+    else:
+        enc = model.encode(b)
+        a0, lp0 = _pick_slot(model, enc, b, m, g, 0)
+        a1, lp1 = _pick_slot(model, enc, b, m, g, 1, a0)
+        value = model.value(enc[0])[:, 0]
+
+    actions = torch.stack([a0, a1], 1).to(torch.uint8).cpu().numpy()
+    stats = torch.stack([lp0 + lp1, value], 1).float().cpu().numpy()
+    logp = stats[:, 0]
+    values = stats[:, 1]
+    return batch, actions, logp, values
+
+
+def _pick_slot(model: Policy, enc, b: dict, m: torch.Tensor, g: torch.Tensor, slot: int, a0: torch.Tensor = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """Pick one legal action for a slot, even under numerical sampling faults."""
+    legal = m[:, 0] if slot == 0 else slot_b_mask(m[:, 1], a0)
+    # Preserve the existing no-legal-action fallback and use the same repaired
+    # mask both for logits and as a postcondition on multinomial's output.
+    legal = legal.clone()
+    legal[~legal.any(1), 0] = True
+    logits = masked(
+        model.slot_logits(enc, b, slot) if slot == 0 else model.slot_logits(enc, b, 1, a0),
+        legal,
+    )
+    logp = F.log_softmax(logits, -1)
+    sampled = torch.where(g, logp.argmax(-1), torch.multinomial(logp.exp(), 1)[:, 0])
+    rows = torch.arange(len(sampled), device=sampled.device)
+    # A backend must never issue a masked ID to the native engine. This guard
+    # also makes an accelerator multinomial numerical fault deterministic.
+    fallback = legal.float().argmax(-1)
+    a = torch.where(legal[rows, sampled], sampled, fallback)
+    return a, logp.gather(1, a[:, None])[:, 0]
 
 
 def sample(model: Policy, obs: dict[str, np.ndarray], mask: np.ndarray,
@@ -124,40 +242,97 @@ def sample(model: Policy, obs: dict[str, np.ndarray], mask: np.ndarray,
     return sample_batch(model, [obs | {"mask": mask}], [greedy])[0]
 
 
-class _Batcher:
-    """Collects the decisions waiting on one model and runs them as one batch, once the
-    event loop has handled the messages that are already in."""
+# Global thread pool for encoding (CPU-bound)
+_ENCODE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="encode")
 
+
+class _PipelineBatcher:
+    """Pipelined batcher: overlaps CPU encoding with GPU inference.
+    
+    Pipeline stages:
+    1. Encode (CPU, thread pool): battle dict → tensor dict
+    2. Infer (GPU, async): batched tensors → actions
+    3. Decode (trivial): actions → numpy
+    """
+    
     def __init__(self, model: Policy):
         self.model = model
         self.pending: list[tuple[dict, bool, asyncio.Future]] = []
         self.loop: asyncio.AbstractEventLoop | None = None
         self.calls = self.decisions = 0
-
+        self._encoding_futures: dict[asyncio.Future, tuple] = {}
+    
     def decide(self, obs: dict[str, np.ndarray], greedy: bool) -> asyncio.Future:
         loop = asyncio.get_running_loop()
-        if loop is not self.loop:  # a new asyncio.run: anything left from the old loop is dead
+        if loop is not self.loop:
             self.loop, self.pending = loop, []
         fut = loop.create_future()
         if not self.pending:
             loop.call_soon(self._flush)
         self.pending.append((obs, greedy, fut))
         return fut
-
+    
     def _flush(self) -> None:
+        if not self.pending:
+            return
         batch, self.pending = self.pending, []
         self.calls += 1
         self.decisions += len(batch)
-        try:
-            out = sample_batch(self.model, [o for o, _, _ in batch], [g for _, g, _ in batch])
-        except Exception as e:
-            for _, _, fut in batch:
-                if not fut.done():
-                    fut.set_exception(e)
-            return
-        for (_, _, fut), r in zip(batch, out):
-            if not fut.done():
-                fut.set_result(r)
+        
+        loop = asyncio.get_running_loop()
+        
+        # Stage 1: Submit encoding to thread pool (runs in parallel with any ongoing GPU work)
+        obs_list = [o for o, _, _ in batch]
+        greedy_list = [g for _, g, _ in batch]
+        futures = [loop.run_in_executor(_ENCODE_EXECUTOR, self._encode_one, o) for o in obs_list]
+        
+        # Stage 2: When all encodings done, run batched inference
+        async def _run_pipeline():
+            try:
+                encoded = await asyncio.gather(*futures)
+                # Add masks and greedy flags
+                for i, (enc, (_, greedy, _)) in enumerate(zip(encoded, batch)):
+                    enc["mask"] = obs_list[i]["mask"]
+                out = await loop.run_in_executor(
+                    None, lambda: sample_batch(self.model, encoded, greedy_list, use_fp16=True, use_compile=True)
+                )
+                for (_, _, fut), r in zip(batch, out):
+                    if not fut.done():
+                        fut.set_result(r)
+            except Exception as e:
+                for _, _, fut in batch:
+                    if not fut.done():
+                        fut.set_exception(e)
+        
+        asyncio.create_task(_run_pipeline())
+    
+    @staticmethod
+    def _encode_one(obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """Encode a single observation (CPU-bound)."""
+        # Remove mask before encoding, it'll be added back
+        mask = obs.pop("mask", None)
+        encoded = {k: v for k, v in obs.items() if k != "mask"}
+        if mask is not None:
+            obs["mask"] = mask  # restore for any other use
+        return encoded
+
+
+class _Batcher:
+    """Backward-compatible batcher (uses pipeline internally)."""
+    
+    def __init__(self, model: Policy):
+        self._pipeline = _PipelineBatcher(model)
+    
+    def decide(self, obs: dict[str, np.ndarray], greedy: bool) -> asyncio.Future:
+        return self._pipeline.decide(obs, greedy)
+    
+    @property
+    def calls(self) -> int:
+        return self._pipeline.calls
+    
+    @property
+    def decisions(self) -> int:
+        return self._pipeline.decisions
 
 
 _BATCHERS: weakref.WeakKeyDictionary[Policy, _Batcher] = weakref.WeakKeyDictionary()
@@ -182,6 +357,7 @@ class NNPlayer(Player):
         self.speed_inference = False  # read their Speed from turn order into the features (ai_vgc.speed)
         self.set_guess: tuple[str, str] | None = None  # (teams_dir, format): fill hidden sets into the features
         self.damage_inference = False  # closed sheets: estimated opposing stats for the damage features (ai_vgc.bulk)
+        self.no_series = False  # ablation: blank the Bo3 series inputs (ser_*) to test if the bot uses game 1->2->3 info
         self.steps: dict[str, list[dict]] = {}
         self.episodes: list[tuple[list[dict], float]] = []  # (steps, reward) per finished battle
         self.series_of: dict[str, tuple[str, int]] = {}  # battle tag -> (Bo3 room, game number)
@@ -202,6 +378,8 @@ class NNPlayer(Player):
         self.repeat: tuple[float, float] | None = None
         self.last_preview: dict[str, str] = {}  # Bo3 room -> our last "/team" order
         self.series_logs: dict[str, list[str]] = {}  # Bo3 room -> logs of its finished games
+        self.aux_labels = False  # RL: attach per-step opponent-action labels (rl.py --aux-coef)
+        self.episode_tags: list[str] = []  # battle tags of episodes still needing aux labels (drain_aux_labels)
 
     async def _handle_battle_message(self, split_messages: list[list[str]]):
         # Each game of a Bo3 announces "Game N of <a href="/game-bestof3-...">"; poke-env ignores it.
@@ -223,6 +401,9 @@ class NNPlayer(Player):
 
     def attach_series(self, battle: DoubleBattle) -> None:
         """Give `encode` the earlier games of this battle's Bo3 series (none in game 1)."""
+        if self.no_series:  # ablation: pretend there is no earlier-game context (ser_* stay zero)
+            battle._series = None
+            return
         series = self.series_of.get(battle.battle_tag)
         logs = self.series_logs.get(series[0], []) if series else []
         battle._series = Context.of(logs, battle.player_username, battle.opponent_username or "")
@@ -321,8 +502,33 @@ class NNPlayer(Player):
             })
         steps = self.steps.pop(battle.battle_tag, [])
         if self.record and steps:
+            if self.aux_labels:
+                self.episode_tags.append(battle.battle_tag)
             reward = 1.0 if battle.won else 0.0 if battle.lost else 0.5
             self.episodes.append((steps, reward))
+
+    def drain_aux_labels(self) -> None:
+        """Fill in each pending episode's `opp` (opponent move/target) labels by re-replaying
+        its own finished battle. Must run off poke-env's event loop (i.e. after `battle_against`
+        has returned, not from `_battle_finished_callback`, which runs on it and would deadlock
+        against `replay`'s blocking `run_coroutine_threadsafe`)."""
+        from ai_vgc.nn.replay import NO_OPP, replay
+
+        n = len(self.episode_tags)
+        for tag, (steps, _r) in zip(self.episode_tags, self.episodes[-n:]):
+            battle = self.battles.get(tag)
+            opp_seq: list[np.ndarray] = []
+            if battle is not None:
+                try:
+                    # replay() derives the battle_format from the tag's "-"-split prefix
+                    # (dataset.py's convention); strip poke-env's own "battle-" prefix first.
+                    replay(tag.removeprefix("battle-"), battle._build_replay_log(), battle.player_role,
+                           lambda b, a, p, o: opp_seq.append(o))
+                except Exception:
+                    opp_seq = []
+            for i, s in enumerate(steps):
+                s["opp"] = opp_seq[i] if i < len(opp_seq) else NO_OPP.copy()
+        self.episode_tags.clear()
 
 
 BESTOF = re.compile(r'Game (\d)</strong> of <a href="/(game-bestof\d-[^"]+)"')
@@ -411,7 +617,7 @@ poll(); setInterval(poll, 1500);
 # The frame: Showdown's battle renderer (as in its replay embeds), fed the live log from /log. Its
 # scripts and styles come through the local server (/ps/..., fetched from play.pokemonshowdown.com
 # and cached), so browser extensions that block third-party scripts don't leave it blank.
-WATCH_VIEW = """<!doctype html><meta charset=utf-8>
+WATCH_VIEW = r"""<!doctype html><meta charset=utf-8>
 <link rel=stylesheet href="/ps/style/font-awesome.css">
 <link rel=stylesheet href="/ps/style/battle.css">
 <link rel=stylesheet href="/ps/style/client.css">
@@ -853,6 +1059,8 @@ def main() -> None:
                     help="challenge these accounts (e.g. scripts/vgcbench_bot.py) --n times in total, "
                          "one battle per account at a time")
     ap.add_argument("--search", action="store_true", help="pick move-turn actions by one-turn search (search.py)")
+    ap.add_argument("--search-backend", choices=["showdown", "vgc-engine"], default="showdown",
+                    help="play search playouts in Showdown (default) or the in-process Rust vgc-engine")
     ap.add_argument("--opp-model", default=None,
                     help="checkpoint with the opponent-action head (--aux) for --search; without one, "
                          "the opponent's options are a random sample, equally likely")
@@ -886,6 +1094,12 @@ def main() -> None:
                          "more simulations each (0 = off); --search-seeds is then the cheap first pass")
     ap.add_argument("--search-refine-seeds", type=int, default=64, help="extra simulations per refined pairing")
     ap.add_argument("--search-seeds2", type=int, default=1, help="depth 2: simulations per turn-2 pairing")
+    ap.add_argument("--search-chance-branching", action="store_true",
+                    help="enable explicit chance event branching (damage rolls, crits, secondary effects)")
+    ap.add_argument("--search-lanes", type=int, default=1,
+                    help="independent sim-bridge pools, picked per battle by tag hash, so --concurrency "
+                         "battles actually search in parallel instead of queueing on one bridge's lock "
+                         "(each lane still uses --search-procs processes internally)")
     ap.add_argument("--adapt", action="store_true",
                     help="Bo3: pick games 2-3 previews against the opponent's last leads (bo3.py)")
     ap.add_argument("--adapt-k", type=int, default=8, help="our candidate previews for --adapt")
@@ -899,6 +1113,8 @@ def main() -> None:
                          "reply to our last turn 1 (0 = off)")
     ap.add_argument("--change-after-loss", action="store_true",
                     help="Bo3 games 2+ after a loss: lead with the policy's likeliest different pair")
+    ap.add_argument("--no-series", action="store_true",
+                    help="ablation: blank the Bo3 series inputs (ser_*) to test if the bot uses game 1->2->3 info")
     ap.add_argument("--vary-margin", type=float, default=0.02, help="in expected win probability")
     ap.add_argument("--opponent-repeat", type=float, nargs=2, metavar=("AFTER_LOSS", "AFTER_WIN"),
                     help="Bo3: an nn: opponent replays its last preview with these probabilities "
@@ -975,12 +1191,14 @@ def main() -> None:
 
                 bot = ChallengeSearchPlayer(args.model, args.rating, args.greedy, opp_model=args.opp_model,
                                             fmt=formats[0], teams_dir=args.sets or args.teams or TEAMS_DIR,
-                                            showdown=args.showdown or "pokemon-showdown", k=args.search_k,
+                                            showdown=args.showdown or ("pokemon-showdown-mc" if "regmc" in formats[0] else "pokemon-showdown"), k=args.search_k,
                                             opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
                                             depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
                                             seeds2=args.search_seeds2, prior=args.search_prior,
                                             procs=args.search_procs, refine=args.search_refine,
-                                            refine_seeds=args.search_refine_seeds, **kw)
+                                            refine_seeds=args.search_refine_seeds,
+                                            chance_branching=args.search_chance_branching,
+                                            lanes=args.search_lanes, backend=args.search_backend, **kw)
                 bot.formats = formats
                 bot.counter_t1 = args.counter_t1
                 if public and not args.no_munchstats:
@@ -1063,12 +1281,14 @@ def main() -> None:
             me = SearchPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,
                               account_configuration=account("nns"), team=teams(), opp_model=args.opp_model,
                               fmt=args.format, teams_dir=args.sets or args.teams or TEAMS_DIR,
-                              showdown=args.showdown or "pokemon-showdown", k=args.search_k,
+                              showdown=args.showdown or ("pokemon-showdown-mc" if "regmc" in args.format else "pokemon-showdown"), k=args.search_k,
                               opp_k=args.search_opp_k, seeds=args.search_seeds, worlds=args.search_worlds,
                               depth=args.search_depth, k2=args.search_k2, opp_k2=args.search_opp_k2,
                               seeds2=args.search_seeds2, prior=args.search_prior,
                               procs=args.search_procs, refine=args.search_refine,
-                              refine_seeds=args.search_refine_seeds, **kw)
+                              refine_seeds=args.search_refine_seeds,
+                              chance_branching=args.search_chance_branching,
+                              lanes=args.search_lanes, backend=args.search_backend, **kw)
             me.counter_t1 = args.counter_t1
         else:
             me = NNPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,
@@ -1078,6 +1298,7 @@ def main() -> None:
         me.damage_inference = args.damage_inference
         me.set_guess = (str(args.sets or args.teams or TEAMS_DIR), args.format) if args.set_guess else None
         me.change_after_loss = args.change_after_loss
+        me.no_series = args.no_series
         if args.adapt:
             from ai_vgc.nn.bo3 import Adapter
             from ai_vgc.teams import TEAMS_DIR
