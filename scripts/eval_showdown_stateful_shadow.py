@@ -803,6 +803,20 @@ def search_turn_19(
         out_a = model(c, n, **history)
         la = out_a["policy_a"][0].clone()
         la[~m0] = -1e9
+        prob_a = la.softmax(-1)
+        top_prob_a, top_a_idx = prob_a.max().item(), int(prob_a.argmax().item())
+
+        # Fast-Path: If policy is >=85% confident on an obvious move, exit immediately (<2ms)
+        if top_prob_a >= 0.85:
+            mb_fast = conditioned_b_mask(m1.unsqueeze(0), torch.tensor([top_a_idx], device=device))[0]
+            out_b_fast = model(c, n, action_a=torch.tensor([top_a_idx], device=device), **history)
+            lb_fast = out_b_fast["policy_b"][0].clone()
+            lb_fast[~mb_fast] = -1e9
+            prob_b = lb_fast.softmax(-1)
+            top_prob_b, top_b_idx = prob_b.max().item(), int(prob_b.argmax().item())
+            if (top_prob_a * top_prob_b) >= 0.80 and (top_a_idx, top_b_idx) in valid_pairs:
+                return (top_a_idx, top_b_idx), 0.0
+
         la = la.log_softmax(-1)
         num_a = min(4, max(1, int(m0.sum().item())))
         top_a = la.topk(num_a).indices.tolist()
@@ -1470,6 +1484,7 @@ async def run_benchmark(
     pool_dir: str = "data/teams/reg_mc",
     opp_model: str | None = None,
     belief_priors: str | None = None,
+    device: str = "auto",
 ):
     port = find_free_port()
     print("=" * 70)
@@ -1511,11 +1526,12 @@ async def run_benchmark(
     } for m in parsed]
     pool = TeamPreviewPool([team_json, team_json])
 
-    device = torch.device("cpu")
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device in (None, "auto") else torch.device(device)
+    print(f"Device:      {dev}")
     print(f"Loading Model 19 from: {model_path}")
-    ckpt_19 = torch.load(model_path, map_location=device, weights_only=False)
+    ckpt_19 = torch.load(model_path, map_location=dev, weights_only=False)
     arch = architecture_for_state(ckpt_19["model_state_dict"])
-    m19 = arch().to(device)
+    m19 = arch().to(dev)
     m19.load_state_dict({k.removeprefix("module."): v for k, v in ckpt_19["model_state_dict"].items()})
     m19.eval()
 
@@ -1532,7 +1548,7 @@ async def run_benchmark(
             if not Path(opp_model_path).exists():
                 opp_model_path = "data/models/mc-cts-rnad-v6.pt"
     print(f"Loading opponent Policy from: {opp_model_path} (team: {opp_team})...")
-    m_v7f = load_policy(opp_model_path, "cpu").eval()
+    m_v7f = load_policy(opp_model_path, str(dev)).eval()
     tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc") if Path("data/teams/reg_mc").exists() else Path(pool_dir), names=[my_team_file.stem])
     if is_pool_opp:
         tb_opp = RandomPoolTeambuilder(Path(pool_dir), cycle=True)
@@ -1559,7 +1575,7 @@ async def run_benchmark(
         m19, pool, team_json, team_json, sets_dir="data/teams/reg_mc",
         dynamic_opp=dynamic_opp,
         priors_path=priors_file,
-        device="cpu", team=tb_us, account_configuration=account("m19p1s"),
+        device=str(dev), team=tb_us, account_configuration=account("m19p1s"),
         battle_format=fmt, accept_open_team_sheet=False,
         max_concurrent_battles=1, server_configuration=config,
         oracle_preview=oracle, oracle_picks=shared_oracle_picks,
@@ -1606,7 +1622,7 @@ async def run_benchmark(
         m19, pool, team_json, team_json, sets_dir="data/teams/reg_mc",
         dynamic_opp=dynamic_opp,
         priors_path=priors_file,
-        device="cpu", team=tb_us, account_configuration=account("m19p2s"),
+        device=str(dev), team=tb_us, account_configuration=account("m19p2s"),
         battle_format=fmt, accept_open_team_sheet=False,
         max_concurrent_battles=1, server_configuration=config,
         oracle_preview=oracle, oracle_picks=shared_oracle_picks,
@@ -1697,6 +1713,7 @@ if __name__ == "__main__":
     parser.add_argument("--pool-dir", type=str, default="data/teams/reg_mc", help="Opponent team pool directory (default: data/teams/reg_mc)")
     parser.add_argument("--opp-model", type=str, default=None, help="Explicit path to opponent model (e.g. data/models/mc-cts-rnad-v6.pt)")
     parser.add_argument("--belief-priors", type=str, default="data/public-priors.json", help="Path to public priors JSON")
+    parser.add_argument("--device", type=str, default="auto", help="Compute device: auto, cuda, or cpu")
     args = parser.parse_args()
     asyncio.run(run_benchmark(
         games=args.games,
@@ -1716,4 +1733,5 @@ if __name__ == "__main__":
         pool_dir=args.pool_dir,
         opp_model=args.opp_model,
         belief_priors=args.belief_priors,
+        device=args.device,
     ))

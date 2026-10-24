@@ -78,7 +78,8 @@ if [[ "$TARGET" == "v7f" || "$TARGET" == "both" ]]; then
     --opp-model "$MODEL_V6" \
     --team "MC378" \
     --pool "$POOL" \
-    --concurrency 4
+    --concurrency 4 \
+    --device auto
 fi
 
 # 2. Run Model 19 Generalist Gauntlet
@@ -87,8 +88,10 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
   echo ">>> [2/2] Benchmarking Generalist (Model 19) against the Pool ($POOL)..."
   EXTRA_FLAGS=()
   if [[ "${SEARCH:-0}" == "1" ]]; then
-    EXTRA_FLAGS+=(--search --depth 1 --search-k 20 --search-m 40 --search-k2 2 --search-m2 2)
-    echo "  (Chance-branching search enabled: K=20, M=40)"
+    SEARCH_K="${SEARCH_K:-8}"
+    SEARCH_M="${SEARCH_M:-12}"
+    EXTRA_FLAGS+=(--search --depth 1 --search-k "$SEARCH_K" --search-m "$SEARCH_M" --search-k2 2 --search-m2 2)
+    echo "  (High-Speed Chance Search enabled: K=$SEARCH_K, M=$SEARCH_M, fast-path active)"
   fi
 
   "$UV_BIN" run python scripts/eval_showdown_stateful_shadow.py \
@@ -99,6 +102,7 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
     --pool-dir "$POOL" \
     --opp-model "$MODEL_V6" \
     --belief-priors "$PRIORS" \
+    --device auto \
     "${EXTRA_FLAGS[@]}"
 fi
 
