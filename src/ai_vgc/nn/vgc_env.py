@@ -79,12 +79,17 @@ def _id(value: str | None) -> str:
     return "".join(c for c in (value or "").lower() if c.isalnum())
 
 
-def _team_json(text: str) -> str:
+def _team_json(text: str, fmt: str = "") -> str:
     """Convert a local Showdown export into Battle.from_teams JSON."""
     team = []
     for mon in Teambuilder.parse_showdown_team(text):
         evs = mon.evs or [0] * 6
         ivs = mon.ivs or [31] * 6
+        if fmt.startswith("gen9champions"):
+            if any(x < 0 or x > 32 for x in evs) or sum(evs) > 66:
+                raise ValueError("Champions requires at most 66 Stat Points total and 32 per stat")
+            evs = [0 if x == 0 else 8 * x - 4 for x in evs]
+            ivs = [31] * 6
         team.append({
             "species": mon.species or mon.nickname,
             "level": mon.level or 50,
@@ -234,6 +239,63 @@ def policy_vocab_tables() -> dict[str, np.ndarray]:
     return policy_vocab_tables._cached
 
 
+def cts_usage_tables() -> dict[str, np.ndarray]:
+    """Public MunchStats priors for native closed-sheet observations.
+
+    This intentionally receives only a species name and the public usage
+    cache.  It never sees a sampled opponent team's item, ability, moves, EVs,
+    IVs, or nature.  The Rust batch uses it exactly as the ladder's fallback
+    species posterior: revealed moves replace these guesses as a battle goes
+    on, while unrevealed slots remain guesses.
+    """
+    import vgc_engine
+    from ai_vgc import munchstats
+    from ai_vgc.bulk import stats_for
+
+    try:
+        mtime = munchstats.CACHE.stat().st_mtime_ns
+    except OSError:
+        mtime = -1
+    cached = getattr(cts_usage_tables, "_cached", None)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+
+    names = vgc_engine.policy_vocab()
+    lookup = {key: {_id(name): i for i, name in enumerate(names[key])}
+              for key in ("items", "abilities", "moves")}
+    usage = munchstats.load()
+    count = len(names["species"])
+    unknown = np.uint16(0xFFFF)
+    items = np.full(count, unknown, np.uint16)
+    abilities = np.full(count, unknown, np.uint16)
+    moves = np.full((count, 4), unknown, np.uint16)
+    stats = np.zeros((count, 6), np.uint16)
+    for i, species in enumerate(names["species"]):
+        entry = usage.get(_id(species), {})
+        item_rows, ability_rows, move_rows = (entry.get("items") or [], entry.get("abilities") or [],
+                                              entry.get("moves") or [])
+        if item_rows:
+            items[i] = lookup["items"].get(_id(item_rows[0][0]), unknown)
+        if ability_rows:
+            abilities[i] = lookup["abilities"].get(_id(ability_rows[0][0]), unknown)
+        for slot, row in enumerate(move_rows[:4]):
+            moves[i, slot] = lookup["moves"].get(_id(row[0]), unknown)
+        base = _info(species).get("baseStats", {})
+        if not base:
+            continue
+        try:
+            points = tuple(int(x) for x in (entry.get("spreads") or [["0/0/0/0/0/0"]])[0][0].split("/"))
+            nature = (entry.get("natures") or [["Hardy"]])[0][0]
+            estimate = stats_for(base, points, nature)
+        except (TypeError, ValueError, KeyError):
+            estimate = stats_for(base, (0, 0, 0, 0, 0, 0), "Hardy")
+        stats[i] = [estimate[k] for k in _STATS]
+    tables = {"items": items, "abilities": abilities,
+              "moves": moves.reshape(-1), "stats": stats.reshape(-1)}
+    cts_usage_tables._cached = (mtime, tables)
+    return tables
+
+
 def repair_packed_actions(
     rows: list[dict[str, np.ndarray]],
     actions: list[tuple[np.ndarray, float, float]],
@@ -282,15 +344,79 @@ def packed_policy_arrays(packed: dict) -> dict[str, np.ndarray]:
         "ser_glob": (states, N_SER_GLOB),
     }
     dtypes = {
-        "tok_cat": np.uint32, "tok_num": np.float16, "mv_cat": np.uint32,
+        "tok_cat": np.int32, "tok_num": np.float16, "mv_cat": np.int32,
         "mv_dyn": np.float16, "dmg": np.float16, "glob": np.float16,
         "act_tok": np.int8, "mask": np.bool_, "ser_tok": np.float16,
         "ser_mv": np.float16, "ser_glob": np.float16,
     }
-    return {
-        key: np.frombuffer(packed[key], dtype=dtypes[key]).reshape(shape)
-        for key, shape in shapes.items()
-    }
+    # Keys whose only legitimate drift is the trailing feature axis: the engine
+    # may emit more or fewer per-slot features than the trained model reads
+    # (e.g. a newer .so adds damage categories, or the ladder's zero-filled
+    # series buffers are sized by a newer engine's constants). Slice or zero-pad
+    # the last axis to the model's width; the leading structure stays aligned.
+    trailing_axis_keys = {"dmg", "ser_tok", "ser_mv", "ser_glob"}
+    out = {}
+    mismatches = {}
+    for key, shape in shapes.items():
+        if key not in packed:
+            continue
+        arr = np.frombuffer(packed[key], dtype=dtypes[key])
+        if states > 0 and key in trailing_axis_keys:
+            mid = int(np.prod(shape[1:-1]))  # per-state size excluding the feature axis
+            expected_last = shape[-1]
+            if mid > 0 and arr.size % (states * mid) == 0:
+                incoming_last = arr.size // (states * mid)
+                if incoming_last != expected_last:
+                    tensor = arr.reshape((states, *shape[1:-1], incoming_last))
+                    if incoming_last < expected_last:
+                        pad = [(0, 0)] * (tensor.ndim - 1) + [(0, expected_last - incoming_last)]
+                        tensor = np.pad(tensor, pad)
+                    else:
+                        tensor = tensor[..., :expected_last]
+                    out[key] = tensor
+                    continue
+        # Structural keys (tok_cat, tok_num, mv_cat, mv_dyn, glob, act_tok, mask):
+        # any size drift means a genuine engine/Python contract break, not a
+        # tolerable feature-axis difference. Collect every offender for one
+        # actionable error rather than crashing on whichever reshapes first.
+        per_state = int(np.prod(shape[1:]))
+        expected = states * per_state
+        if states > 0 and per_state > 0 and arr.size != expected:
+            ratio = arr.size / expected if expected else float("inf")
+            mismatches[key] = (arr.size, states, per_state, ratio)
+            continue
+        out[key] = arr.reshape(shape)
+    if mismatches:
+        detail = ", ".join(
+            f"{key}: buffer={size} states={states} per_state={per_state} ratio={ratio:.3f}"
+            for key, (size, states, per_state, ratio) in mismatches.items()
+        )
+        raise ValueError(f"packed_policy_arrays size mismatch ({detail})")
+    return out
+
+
+def _merge_rollouts(d_a, s_a, d_b, s_b):
+    """Concatenate two homogeneous persistent-league rollouts (an open- and a
+    closed-team-sheet half) into one training batch. Trajectory rows are
+    independent decisions, so a straight row concatenation is valid; counts in
+    the stats are summed and rates re-weighted by their game counts."""
+    data = {k: np.concatenate([d_a[k], d_b[k]]) for k in d_a}
+    ga, gb = s_a["completed_games"], s_b["completed_games"]
+
+    def wmean(a, na, b, nb):
+        return (a * na + b * nb) / (na + nb) if (na + nb) else 0.5
+
+    stats = {k: (s_a[k] + s_b[k]) for k in s_a}  # default: sum counts
+    stats["waves"] = s_a["waves"]                # shared horizon, not additive
+    stats["mean_turns"] = wmean(s_a["mean_turns"], ga, s_b["mean_turns"], gb)
+    stats["learner_p1_reward"] = wmean(s_a["learner_p1_reward"], s_a["learner_p1_games"],
+                                       s_b["learner_p1_reward"], s_b["learner_p1_games"])
+    stats["learner_p2_reward"] = wmean(s_a["learner_p2_reward"], s_a["learner_p2_games"],
+                                       s_b["learner_p2_reward"], s_b["learner_p2_games"])
+    stats["elapsed_s"] = s_a["elapsed_s"] + s_b["elapsed_s"]
+    stats["games_s"] = (ga + gb) / stats["elapsed_s"] if stats["elapsed_s"] else 0.0
+    stats["policy_version"] = max(s_a["policy_version"], s_b["policy_version"])
+    return data, stats
 
 
 def packed_policy_rows(packed: dict) -> list[dict[str, np.ndarray]]:
@@ -430,11 +556,24 @@ class NativeVGCConfig:
     # Opponent teams may be supplied separately for a native policy league.
     learner_team: str | Path | None = None
     opponent_teams_dir: str | Path | None = None
+    # A single fixed opposing team for native specialist curriculum games.
+    # This is distinct from `opponent_teams_dir`: choosing a random team from
+    # a folder would silently erase the specialist matchup.
+    opponent_team: str | Path | None = None
     rating: float = 1700.0
     greedy: bool = False
     tera_allowed: bool = False
     max_turns: int = 128
     team_preview: bool = False
+    bo3: bool = False
+    ots: bool = False # Open Team Sheets: benched mons expose moves/items/abilities
+    # Fraction of persistent Bo1 slots trained with Open Team Sheets while the
+    # rest stay closed (cts_version). >0 makes one net learn both views at once
+    # so it never collapses when the live format differs from training — the
+    # open/closed split that sank the separate-sheet v8-scale models. 0 keeps
+    # the whole batch on `ots`.
+    ots_mix: float = 0.0
+    cts_version: int = 2
     # Persistent normal waves have a stable batch shape, so callers may opt
     # into compiled inference after measuring it on their target accelerator.
     compile_inference: bool = False
@@ -456,14 +595,17 @@ class NativeSelfPlay:
         self.config = config
         self.teams = _pool(config.teams_dir)
         self.learner_team = (
-            _team_json(Path(config.learner_team).read_text()) if config.learner_team else None
+            _team_json(Path(config.learner_team).read_text(), config.fmt) if config.learner_team else None
+        )
+        self.opponent_team = (
+            _team_json(Path(config.opponent_team).read_text(), config.fmt) if config.opponent_team else None
         )
         self.opponent_teams = _pool(config.opponent_teams_dir) if config.opponent_teams_dir else self.teams
         self.rng = random.Random(config.seed)
 
     def _battle(self):
         return self.engine.Battle.from_teams(
-            _team_json(self.rng.choice(self.teams)), _team_json(self.rng.choice(self.teams)),
+            _team_json(self.rng.choice(self.teams), self.config.fmt), _team_json(self.rng.choice(self.teams), self.config.fmt),
             format=self.config.fmt, seed=self.rng.randrange(2**63), tera_allowed=self.config.tera_allowed,
             decision_phases=True,
         )
@@ -537,10 +679,10 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         p1: list[str] = []
         p2: list[str] = []
         for row, _slot in enumerate(indices):
-            learner_team = self.learner_team or _team_json(self.rng.choice(self.teams))
-            opponent = _team_json(self.rng.choice(self.opponent_teams))
+            learner_team = self.learner_team or _team_json(self.rng.choice(self.teams), self.config.fmt)
+            opponent = self.opponent_team or _team_json(self.rng.choice(self.opponent_teams), self.config.fmt)
             if learner_sides is None:
-                p1.append(_team_json(self.rng.choice(self.teams)))
+                p1.append(_team_json(self.rng.choice(self.teams), self.config.fmt))
                 p2.append(opponent)
             elif int(learner_sides[row]) == 0:
                 p1.append(learner_team)
@@ -555,13 +697,54 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         battles: Any,
         indices: np.ndarray,
         learner_sides: np.ndarray | None = None,
+        reuse_series: np.ndarray | None = None,
     ) -> None:
-        """Refill completed native slots while retaining stable packed row order."""
+        """Refill slots, retaining their team pair for games within a Bo3."""
         indices = np.asarray(indices, dtype=np.intp)
         if not len(indices):
             return
-        p1, p2, seeds = self._new_slot_payloads(indices, learner_sides)
+        reuse = np.zeros(len(indices), dtype=bool) if reuse_series is None else np.asarray(reuse_series, dtype=bool)
+        if len(reuse) != len(indices):
+            raise ValueError("series reuse flags must align with reset slots")
+        fresh_rows = np.flatnonzero(~reuse)
+        p1: list[str] = [""] * len(indices)
+        p2: list[str] = [""] * len(indices)
+        if len(fresh_rows):
+            fresh_indices = indices[fresh_rows]
+            fresh_sides = learner_sides[fresh_rows] if learner_sides is not None else None
+            fresh_p1, fresh_p2, _ = self._new_slot_payloads(fresh_indices, fresh_sides)
+            for row, team1, team2 in zip(fresh_rows, fresh_p1, fresh_p2):
+                p1[int(row)], p2[int(row)] = team1, team2
+                self._slot_teams[int(indices[row])] = (team1, team2)
+        for row in np.flatnonzero(reuse):
+            p1[int(row)], p2[int(row)] = self._slot_teams[int(indices[row])]
+        seeds = [self.rng.randrange(2**63) for _ in indices]
         battles.reset_slots(indices.tolist(), p1, p2, seeds)
+
+    def _apply_series_context(
+        self,
+        packed: dict[str, np.ndarray],
+        wins: np.ndarray,
+        last_winner: np.ndarray,
+        game_number: np.ndarray,
+    ) -> dict[str, np.ndarray]:
+        """Overlay per-perspective Bo3 score features on the engine's zero buffers."""
+        if not self.config.bo3:
+            return packed
+        result = dict(packed)
+        series = np.zeros_like(packed["ser_glob"])
+        series[0::2, 0] = game_number > 1
+        series[0::2, 1] = game_number > 2
+        series[0::2, 2] = wins[:, 0] / 2.0
+        series[0::2, 3] = wins[:, 1] / 2.0
+        series[0::2, 4] = last_winner == 0
+        series[1::2, 0] = game_number > 1
+        series[1::2, 1] = game_number > 2
+        series[1::2, 2] = wins[:, 1] / 2.0
+        series[1::2, 3] = wins[:, 0] / 2.0
+        series[1::2, 4] = last_winner == 1
+        result["ser_glob"] = series.astype(np.float16, copy=False)
+        return result
 
     def _sample_packed(
         self,
@@ -622,13 +805,17 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         """
         game_indices = np.arange(games, dtype=np.intp)
         source = packed_policy_arrays(
-            battles.policy_tensors(self.config.rating, preview=True)
+            battles.policy_tensors(self.config.rating, preview=True, ots=self.config.ots, cts_version=self.config.cts_version)
         )
         states = games * 2
         selected = np.empty((states, 0), dtype=np.uint8)
 
         for _ in range(2):
             preview = dict(source)
+            preview["tok_num"] = source["tok_num"].copy()
+            preview["tok_num"][:, :6, 76] = 0
+            for prior in selected.T:
+                preview["tok_num"][np.arange(states), prior - 1, 76] = 1
             mask = np.zeros((states, 2, N_ACT), dtype=bool)
             mask[:, :, 1:7] = True
             for prior in selected.T:
@@ -660,20 +847,29 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         game_indices: np.ndarray,
         stores: dict[str, list[np.ndarray]],
         episode_rows: list[list[int]],
+        wins: np.ndarray | None = None,
+        last_winner: np.ndarray | None = None,
+        game_number: np.ndarray | None = None,
     ) -> None:
         """Run packed bring-four preview for selected fresh persistent slots only."""
         game_indices = np.asarray(game_indices, dtype=np.intp)
         if not len(game_indices):
             return
         source = packed_policy_arrays(
-            battles.policy_tensors(self.config.rating, preview=True, indices=game_indices.tolist())
+            battles.policy_tensors(self.config.rating, preview=True, indices=game_indices.tolist(), ots=self.config.ots, cts_version=self.config.cts_version)
         )
+        if wins is not None and last_winner is not None and game_number is not None:
+            source = self._apply_series_context(source, wins[game_indices], last_winner[game_indices], game_number[game_indices])
         states = len(game_indices) * 2
         selected = np.empty((states, 0), dtype=np.uint8)
         local_rows = np.arange(states, dtype=np.intp)
         local_game_indices = np.arange(len(game_indices), dtype=np.intp)
         for _ in range(2):
             preview = dict(source)
+            preview["tok_num"] = source["tok_num"].copy()
+            preview["tok_num"][:, :6, 76] = 0
+            for prior in selected.T:
+                preview["tok_num"][np.arange(states), prior - 1, 76] = 1
             mask = np.zeros((states, 2, N_ACT), dtype=bool)
             mask[:, :, 1:7] = True
             for prior in selected.T:
@@ -895,25 +1091,41 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         stores: dict[str, list[np.ndarray]],
         episode_rows: list[list[int]],
         model: torch.nn.Module,
-    ) -> np.ndarray:
+        wins: np.ndarray | None = None,
+        last_winner: np.ndarray | None = None,
+        game_number: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, int]:
         """Record and execute policy-selected forced switches for all live games."""
-        while active.any():
-            replacing = np.asarray(battles.needs_replacements(), dtype=bool)
-            indices = np.flatnonzero(active & replacing)
-            if not len(indices):
+        pending: list[int] | None = np.flatnonzero(active).tolist() if not active.all() else None
+        replacement_count = 0
+        has_indices_api = hasattr(battles, "needs_replacements_indices")
+        while True:
+            if has_indices_api:
+                indices = battles.needs_replacements_indices(pending)
+            else:
+                replacing = np.asarray(battles.needs_replacements(), dtype=bool)
+                indices = [i for i in pending if replacing[i]] if pending is not None else np.flatnonzero(active & replacing).tolist()
+            if not indices:
                 break
+            replacement_count += len(indices)
             packed = packed_policy_arrays(
-                battles.policy_tensors(self.config.rating, indices=indices.tolist())
+                battles.policy_tensors(self.config.rating, indices=indices, ots=self.config.ots, cts_version=self.config.cts_version)
             )
+            if wins is not None and last_winner is not None and game_number is not None:
+                packed = self._apply_series_context(packed, wins[np.asarray(indices)], last_winner[np.asarray(indices)], game_number[np.asarray(indices)])
             obs, actions, logp, values = self._sample_packed(
                 model, packed, np.arange(len(indices)), compile_inference=False,
             )
-            self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 0)
-            self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 1)
+            idx_arr = np.asarray(indices, dtype=np.int64)
+            self._append_packed_transitions(stores, episode_rows, idx_arr, obs, actions, logp, values, 0)
+            self._append_packed_transitions(stores, episode_rows, idx_arr, obs, actions, logp, values, 1)
             active = self._step_packed(
-                battles, actions[::2], actions[1::2], indices, terminal,
+                battles, actions[::2], actions[1::2], idx_arr, terminal,
             )
-        return active
+            pending = [i for i in indices if active[i]]
+            if not pending:
+                break
+        return active, replacement_count
 
     def _battles(self, games: int, learner_sides: np.ndarray | None = None):
         slots = np.arange(games, dtype=np.intp)
@@ -923,8 +1135,12 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             seeds=seeds,
             tera_allowed=self.config.tera_allowed, decision_phases=True,
         )
+        self._slot_teams = dict(enumerate(zip(p1, p2)))
         tables = policy_vocab_tables()
         battles.set_policy_vocab(tables["species"], tables["items"], tables["abilities"], tables["moves"])
+        if not self.config.ots:
+            usage = cts_usage_tables()
+            battles.set_cts_usage(usage["items"], usage["abilities"], usage["moves"], usage["stats"])
         return battles
 
     def play(self, model: torch.nn.Module, games: int) -> tuple[list[tuple[list[dict], float]], list[float]]:
@@ -947,14 +1163,14 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             if not active.any():
                 break
             indices = np.flatnonzero(active)
-            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
+            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating, ots=self.config.ots, cts_version=self.config.cts_version))
             obs, actions, logp, values = self._sample_packed(model, packed, indices)
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 0)
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 1)
             active = self._step_packed(
                 battles, actions[::2], actions[1::2], indices, terminal,
             )
-            active = self._replacement_batch(battles, active, terminal, stores, episode_rows, model)
+            active, _ = self._replacement_batch(battles, active, terminal, stores, episode_rows, model)
 
         return self._rollout_episodes(stores, episode_rows, prefixes, terminal)
 
@@ -976,12 +1192,12 @@ class NativeBatchSelfPlay(NativeSelfPlay):
             if not active.any():
                 break
             indices = np.flatnonzero(active)
-            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
+            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating, ots=self.config.ots, cts_version=self.config.cts_version))
             obs, actions, logp, values = self._sample_packed(model, packed, indices)
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 0)
             self._append_packed_transitions(stores, episode_rows, indices, obs, actions, logp, values, 1)
             active = self._step_packed(battles, actions[::2], actions[1::2], indices, terminal)
-            active = self._replacement_batch(battles, active, terminal, stores, episode_rows, model)
+            active, _ = self._replacement_batch(battles, active, terminal, stores, episode_rows, model)
 
         data, rewards = self._rollout_data(stores, episode_rows, terminal)
         if self.config.collect_rollout_stats:
@@ -998,103 +1214,22 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         slots: int,
         decision_horizon: int,
     ) -> tuple[dict[str, np.ndarray], dict[str, float | int]]:
-        """Collect terminal PPO episodes from a fixed-size, immediately-refilled batch.
-
-        Normal policy waves always sample all ``slots`` battle positions. When
-        a game ends (or reaches ``max_turns``), its two terminal episodes are
-        compacted, precisely those slots are reconstructed in Rust, and the
-        next game begins before the next normal wave. Unfinished horizon tails
-        stay resident in the actor but are intentionally omitted so terminal
-        GAE keeps its established, exact semantics.
-        """
+        """Collect terminal episodes, preserving matchup and context across Bo3 games."""
         if slots < 1 or decision_horizon < 1:
             raise ValueError("persistent collection needs positive slots and decision_horizon")
-        started = time.perf_counter()
-        battles = self._battles(slots)
-        stores = {key: [] for key in (*_PACKED_KEYS, "action", "logp", "value", "preview")}
-        episode_rows: list[list[int]] = [[] for _ in range(2 * slots)]
-        terminal = ["continue"] * slots
-        game_indices = np.arange(slots, dtype=np.intp)
-        slot_turns = np.zeros(slots, dtype=np.int16)
-        completed: list[tuple[list[int], float]] = []
-        completed_games: list[float] = []
-        completed_turns: list[int] = []
-        replacement_states = 0
-        timing = {"export_s": 0.0, "sample_s": 0.0, "step_s": 0.0, "replacement_s": 0.0,
-                  "reset_s": 0.0, "preview_s": 0.0}
-
-        if self.config.team_preview:
-            t0 = time.perf_counter()
-            self._select_preview_packed(battles, model, slots, stores, episode_rows)
-            timing["preview_s"] += time.perf_counter() - t0
-
-        for _wave in range(decision_horizon):
-            t0 = time.perf_counter()
-            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
-            timing["export_s"] += time.perf_counter() - t0
-            t0 = time.perf_counter()
-            obs, actions, logp, values = self._sample_packed(model, packed, game_indices)
-            timing["sample_s"] += time.perf_counter() - t0
-            self._append_packed_transitions(stores, episode_rows, game_indices, obs, actions, logp, values, 0)
-            self._append_packed_transitions(stores, episode_rows, game_indices, obs, actions, logp, values, 1)
-            t0 = time.perf_counter()
-            active = self._step_packed(battles, actions[::2], actions[1::2], game_indices, terminal)
-            timing["step_s"] += time.perf_counter() - t0
-            t0 = time.perf_counter()
-            before_replacements = np.asarray(battles.needs_replacements(), dtype=bool)
-            replacement_states += int((active & before_replacements).sum())
-            active = self._replacement_batch(battles, active, terminal, stores, episode_rows, model)
-            timing["replacement_s"] += time.perf_counter() - t0
-            slot_turns += 1
-            # The finite rollout treated a max-turn game as a draw. Preserve
-            # that semantics while restarting the slot without an engine-wide
-            # batch rebuild.
-            cutoff = active & (slot_turns >= self.config.max_turns)
-            for index in np.flatnonzero(cutoff):
-                terminal[int(index)] = "tie"
-            finished = np.flatnonzero(~active | cutoff)
-            if not len(finished):
-                continue
-
-            for index in finished:
-                game = int(index)
-                result = terminal[game]
-                reward = 1.0 if result == "p1_win" else 0.0 if result == "p2_win" else 0.5
-                completed.append((episode_rows[2 * game], reward))
-                completed.append((episode_rows[2 * game + 1], 1.0 - reward if reward != 0.5 else 0.5))
-                completed_games.append(reward)
-                completed_turns.append(int(slot_turns[game]))
-                episode_rows[2 * game] = []
-                episode_rows[2 * game + 1] = []
-                terminal[game] = "continue"
-                slot_turns[game] = 0
-
-            t0 = time.perf_counter()
-            self._reset_slots(battles, finished)
-            timing["reset_s"] += time.perf_counter() - t0
-            if self.config.team_preview:
-                t0 = time.perf_counter()
-                self._select_preview_packed_indices(
-                    battles, model, finished, stores, episode_rows,
-                )
-                timing["preview_s"] += time.perf_counter() - t0
-
-        data, _episode_rewards = self._completed_rollout_data(stores, completed)
-        elapsed = time.perf_counter() - started
-        stats: dict[str, float | int] = {
-            "slots": slots,
-            "waves": decision_horizon,
-            "completed_games": len(completed_games),
-            "completed_player_episodes": len(completed),
-            "mean_turns": float(np.mean(completed_turns)) if completed_turns else 0.0,
-            "normal_states": slots * decision_horizon * 2,
-            "replacement_states": replacement_states * 2,
-            "preview_states": int(data["preview"].sum()),
-            "elapsed_s": elapsed,
-            "games_s": len(completed_games) / elapsed if elapsed else 0.0,
-            **timing,
-        }
-        return data, stats
+        if not self.config.bo3:
+            from ai_vgc.nn.native_rollout import Bo1Rollout
+            if not hasattr(self, "_bo1_rollout"):
+                self._bo1_rollout = Bo1Rollout(self, slots, league=False)
+            if self._bo1_rollout.slots != slots or self._bo1_rollout.league:
+                raise ValueError("Cannot change a live runner's slot count or league mode")
+            return self._bo1_rollout.collect(model, model, decision_horizon)
+        from ai_vgc.nn.native_rollout import Bo3Rollout
+        if not hasattr(self, "_bo3_rollout"):
+            self._bo3_rollout = Bo3Rollout(self, slots, league=False)
+        if self._bo3_rollout.slots != slots or self._bo3_rollout.league:
+            raise ValueError("Cannot change a live runner's slot count or league mode")
+        return self._bo3_rollout.collect(model, model, decision_horizon)
 
 
     def collect_persistent_league_data(
@@ -1105,209 +1240,37 @@ class NativeBatchSelfPlay(NativeSelfPlay):
         decision_horizon: int,
         learner_first: bool = True,
     ) -> tuple[dict[str, np.ndarray], dict[str, float | int]]:
-        """Collect learner-only terminal PPO data against a frozen native policy.
-
-        Learner sides alternate by slot and flip when a slot is refilled. Both
-        policies consume the same packed Rust export; actions are merged for
-        one native step, while only learner rows are retained for PPO.
-        """
+        """Collect learner-only terminal episodes against a frozen native policy."""
         if slots < 1 or decision_horizon < 1:
             raise ValueError("persistent league collection needs positive slots and horizon")
-        started = time.perf_counter()
-        learner_sides = (np.arange(slots, dtype=np.int8) + int(not learner_first)) % 2
-        battles = self._battles(slots, learner_sides)
-        stores = {key: [] for key in (*_PACKED_KEYS, "action", "logp", "value", "preview")}
-        # The existing appender indexes side trajectories as 2*slot+side. Only
-        # the learner-owned side list is populated and later finalized.
-        episode_rows: list[list[int]] = [[] for _ in range(2 * slots)]
-        terminal = ["continue"] * slots
-        game_indices = np.arange(slots, dtype=np.intp)
-        slot_turns = np.zeros(slots, dtype=np.int16)
-        completed: list[tuple[list[int], float]] = []
-        completed_rewards: list[float] = []
-        completed_turns: list[int] = []
-        learner_p1_rewards: list[float] = []
-        learner_p2_rewards: list[float] = []
-        replacement_states = 0
-        timing = {"export_s": 0.0, "learner_sample_s": 0.0, "opponent_sample_s": 0.0,
-                  "step_s": 0.0, "replacement_s": 0.0, "reset_s": 0.0,
-                  "preview_s": 0.0}
-
-        def append_learner(
-            obs: dict[str, np.ndarray], actions: np.ndarray, logp: np.ndarray,
-            values: np.ndarray, indices: np.ndarray, preview: bool = False,
-        ) -> None:
-            total_rows = stores.setdefault("_total_rows", [0])
-            base = total_rows[0]
-            total_rows[0] += len(indices)
-            for key in _PACKED_KEYS:
-                stores[key].append(obs[key])
-            stores["action"].append(actions.astype(np.int16, copy=False))
-            stores["logp"].append(logp.astype(np.float32, copy=False))
-            stores["value"].append(values.astype(np.float32, copy=False))
-            stores["preview"].append(np.full(len(indices), preview, dtype=bool))
-            for row, game in enumerate(indices):
-                side = int(learner_sides[game])
-                episode_rows[2 * int(game) + side].append(base + row)
-
-        def sample_sides(packed: dict[str, np.ndarray], indices: np.ndarray, is_subset: bool = False):
-            indices = np.asarray(indices, dtype=np.intp)
-            local_indices = np.arange(len(indices), dtype=np.intp) if is_subset else indices
-            learner_rows = 2 * local_indices + learner_sides[indices]
-            opponent_rows = 2 * local_indices + (1 - learner_sides[indices])
-            t0 = time.perf_counter()
-            learner_obs, learner_actions, learner_logp, learner_values = sample_packed_batch(
-                learner, packed, learner_rows, greedy=self.config.greedy,
-                use_fp16=True, use_compile=False,
-            )
-            timing["learner_sample_s"] += time.perf_counter() - t0
-            t0 = time.perf_counter()
-            _opp_obs, opponent_actions, _opp_logp, _opp_values = sample_packed_batch(
-                opponent, packed, opponent_rows, greedy=self.config.greedy,
-                use_fp16=True, use_compile=False,
-            )
-            timing["opponent_sample_s"] += time.perf_counter() - t0
-            p1 = np.empty((len(indices), 2), dtype=np.uint8)
-            p2 = np.empty((len(indices), 2), dtype=np.uint8)
-            learner_is_p1 = learner_sides[indices] == 0
-            p1[learner_is_p1] = learner_actions[learner_is_p1]
-            p2[learner_is_p1] = opponent_actions[learner_is_p1]
-            p1[~learner_is_p1] = opponent_actions[~learner_is_p1]
-            p2[~learner_is_p1] = learner_actions[~learner_is_p1]
-            return learner_obs, learner_actions, learner_logp, learner_values, p1, p2
-
-        def replacement(active: np.ndarray) -> np.ndarray:
-            """Resolve forced switches with their owning frozen/live policies.
-
-            A replacement phase is a regular policy decision as far as PPO is
-            concerned, but only the learner perspective is recorded. The Rust
-            batch receives actions in physical P1/P2 order, so ``sample_sides``
-            reconstructs that order after sampling the two policy subsets.
-            """
-            nonlocal replacement_states
-            while active.any():
-                replacing = np.asarray(battles.needs_replacements(), dtype=bool)
-                indices = np.flatnonzero(active & replacing)
-                if not len(indices):
-                    break
-                replacement_states += len(indices)
-                t0 = time.perf_counter()
-                packed = packed_policy_arrays(
-                    battles.policy_tensors(self.config.rating, indices=indices.tolist())
-                )
-                timing["export_s"] += time.perf_counter() - t0
-                lo, la, ll, lv, p1, p2 = sample_sides(packed, indices, is_subset=True)
-                append_learner(lo, la, ll, lv, indices)
-                t0 = time.perf_counter()
-                active = self._step_packed(battles, p1, p2, indices, terminal)
-                timing["step_s"] += time.perf_counter() - t0
-            return active
-
-        def preview(indices: np.ndarray) -> None:
-            """Select four with both policies but keep only learner decisions."""
-            indices = np.asarray(indices, dtype=np.intp)
-            source = packed_policy_arrays(
-                battles.policy_tensors(self.config.rating, preview=True, indices=indices.tolist())
-            )
-            n_sub = len(indices)
-            states = n_sub * 2
-            local_rows = np.arange(states, dtype=np.intp)
-            local_indices = np.arange(n_sub, dtype=np.intp)
-            picked = np.empty((states, 0), dtype=np.uint8)
-            for _ in range(2):
-                masked = dict(source)
-                mask = np.zeros((states, 2, N_ACT), dtype=bool)
-                mask[:, :, 1:7] = True
-                for prior in picked.T:
-                    mask[local_rows, :, prior] = False
-                masked["mask"] = mask
-                learner_rows = 2 * local_indices + learner_sides[indices]
-                opponent_rows = 2 * local_indices + (1 - learner_sides[indices])
-                t0 = time.perf_counter()
-                lo, la, ll, lv = sample_packed_batch(
-                    learner, masked, learner_rows, greedy=self.config.greedy,
-                    use_fp16=True, use_compile=False,
-                )
-                timing["learner_sample_s"] += time.perf_counter() - t0
-                t0 = time.perf_counter()
-                _oo, oa, _ol, _ov = sample_packed_batch(
-                    opponent, masked, opponent_rows, greedy=self.config.greedy,
-                    use_fp16=True, use_compile=False,
-                )
-                timing["opponent_sample_s"] += time.perf_counter() - t0
-                append_learner(lo, la, ll, lv, indices, preview=True)
-                physical = np.empty((states, 2), dtype=np.uint8)
-                learner_is_p1 = learner_sides[indices] == 0
-                physical[0::2][learner_is_p1] = la[learner_is_p1]
-                physical[1::2][learner_is_p1] = oa[learner_is_p1]
-                physical[0::2][~learner_is_p1] = oa[~learner_is_p1]
-                physical[1::2][~learner_is_p1] = la[~learner_is_p1]
-                if np.any((physical < 1) | (physical > 6)) or np.any(physical[:, 0] == physical[:, 1]):
-                    raise RuntimeError("native league preview emitted an invalid team slot")
-                picked = np.concatenate((picked, physical), axis=1)
-            battles.select_teams_at(indices.tolist(), (picked[0::2] - 1).tolist(),
-                                    (picked[1::2] - 1).tolist())
-
-        if self.config.team_preview:
-            t0 = time.perf_counter()
-            preview(game_indices)
-            timing["preview_s"] += time.perf_counter() - t0
-
-        for _wave in range(decision_horizon):
-            t0 = time.perf_counter()
-            packed = packed_policy_arrays(battles.policy_tensors(self.config.rating))
-            timing["export_s"] += time.perf_counter() - t0
-            lo, la, ll, lv, p1, p2 = sample_sides(packed, game_indices)
-            append_learner(lo, la, ll, lv, game_indices)
-            t0 = time.perf_counter()
-            active = self._step_packed(battles, p1, p2, game_indices, terminal)
-            timing["step_s"] += time.perf_counter() - t0
-            t0 = time.perf_counter()
-            active = replacement(active)
-            timing["replacement_s"] += time.perf_counter() - t0
-            slot_turns += 1
-            cutoff = active & (slot_turns >= self.config.max_turns)
-            for index in np.flatnonzero(cutoff):
-                terminal[int(index)] = "tie"
-            finished = np.flatnonzero(~active | cutoff)
-            if not len(finished):
-                continue
-            for index in finished:
-                game = int(index)
-                p1_reward = 1.0 if terminal[game] == "p1_win" else 0.0 if terminal[game] == "p2_win" else 0.5
-                reward = p1_reward if learner_sides[game] == 0 else 1.0 - p1_reward if p1_reward != 0.5 else 0.5
-                side = int(learner_sides[game])
-                completed.append((episode_rows[2 * game + side], reward))
-                completed_rewards.append(reward)
-                (learner_p1_rewards if side == 0 else learner_p2_rewards).append(reward)
-                completed_turns.append(int(slot_turns[game]))
-                episode_rows[2 * game + side] = []
-                terminal[game] = "continue"
-                slot_turns[game] = 0
-                learner_sides[game] = 1 - learner_sides[game]
-            t0 = time.perf_counter()
-            self._reset_slots(battles, finished, learner_sides[finished])
-            timing["reset_s"] += time.perf_counter() - t0
-            if self.config.team_preview:
-                t0 = time.perf_counter()
-                preview(finished)
-                timing["preview_s"] += time.perf_counter() - t0
-
-        data, _ = self._completed_rollout_data(stores, completed)
-        elapsed = time.perf_counter() - started
-        return data, {
-            "slots": slots, "waves": decision_horizon,
-            "completed_games": len(completed_rewards),
-            "completed_player_episodes": len(completed),
-            "mean_turns": float(np.mean(completed_turns)) if completed_turns else 0.0,
-            "learner_p1_games": len(learner_p1_rewards),
-            "learner_p1_reward": float(np.mean(learner_p1_rewards)) if learner_p1_rewards else 0.5,
-            "learner_p2_games": len(learner_p2_rewards),
-            "learner_p2_reward": float(np.mean(learner_p2_rewards)) if learner_p2_rewards else 0.5,
-            "normal_states": slots * decision_horizon,
-            "replacement_states": replacement_states,
-            "preview_states": int(data["preview"].sum()),
-            "elapsed_s": elapsed,
-            "games_s": len(completed_rewards) / elapsed if elapsed else 0.0,
-            **timing,
-        }
+        if not self.config.bo3:
+            from ai_vgc.nn.native_rollout import Bo1Rollout
+            mix = float(getattr(self.config, "ots_mix", 0.0) or 0.0)
+            if 0.0 < mix < 1.0:
+                # 50/50 open+closed curriculum via two homogeneous persistent
+                # rollouts so one net learns both views without mixing sheet
+                # modes inside a single native batch. Slots split once and stay
+                # put; each half is a proven pure-open / pure-closed rollout.
+                n_open = int(round(slots * mix))
+                n_closed = slots - n_open
+                if n_open < 1 or n_closed < 1:
+                    raise ValueError(f"ots_mix={mix} with slots={slots} leaves an empty half")
+                if not hasattr(self, "_bo1_open"):
+                    self._bo1_open = Bo1Rollout(self, n_open, league=True, learner_first=learner_first, ots=True)
+                    self._bo1_closed = Bo1Rollout(self, n_closed, league=True, learner_first=learner_first, ots=False)
+                if self._bo1_open.slots != n_open or self._bo1_closed.slots != n_closed:
+                    raise ValueError("Cannot change a live runner's slot split")
+                d_o, s_o = self._bo1_open.collect(learner, opponent, decision_horizon)
+                d_c, s_c = self._bo1_closed.collect(learner, opponent, decision_horizon)
+                return _merge_rollouts(d_o, s_o, d_c, s_c)
+            if not hasattr(self, "_bo1_rollout"):
+                self._bo1_rollout = Bo1Rollout(self, slots, league=True, learner_first=learner_first)
+            if self._bo1_rollout.slots != slots or not self._bo1_rollout.league:
+                raise ValueError("Cannot change a live runner's slot count or league mode")
+            return self._bo1_rollout.collect(learner, opponent, decision_horizon)
+        from ai_vgc.nn.native_rollout import Bo3Rollout
+        if not hasattr(self, "_bo3_rollout"):
+            self._bo3_rollout = Bo3Rollout(self, slots, league=True, learner_first=learner_first)
+        if self._bo3_rollout.slots != slots or not self._bo3_rollout.league:
+            raise ValueError("Cannot change a live runner's slot count or league mode")
+        return self._bo3_rollout.collect(learner, opponent, decision_horizon)

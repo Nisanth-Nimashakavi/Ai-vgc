@@ -85,7 +85,7 @@ def gen(args: argparse.Namespace) -> None:
                   opp_model=args.opp_model, fmt=args.format, teams_dir=sets_dir,
                   showdown=args.showdown or "pokemon-showdown", k=k, opp_k=args.search_opp_k,
                   seeds=args.search_seeds, prior=args.search_prior, worlds=args.search_worlds,
-                  depth=args.search_depth, **common)
+                  depth=args.search_depth, chance_branching=args.search_chance_branching, **common)
     me.on_search = record
     me.speed_inference, me.damage_inference = args.speed_inference, args.damage_inference
     me.set_guess = (sets_dir, args.format) if args.set_guess else None
@@ -146,8 +146,14 @@ def losses(model, ref, b: dict[str, torch.Tensor], args) -> dict[str, torch.Tens
         lpb.gather(1, cand[..., 1].clamp(min=0).flatten()[:, None])[:, 0].view(B, k)
     # Candidates come in the policy's order, so candidate 0 is its own pick: where search agreed,
     # --agree-weight scales the example down (0 = learn only from search's overrides).
-    over = tgt.argmax(1) != 0
-    w = torch.where(over, 1.0, args.agree_weight)
+    best = tgt.argmax(1)
+    over = best != 0
+    # An override only counts as a clear signal if search's value for its pick actually beats
+    # the policy's own candidate by --margin; a few-seed value gap inside that band is simulation
+    # noise, not evidence the policy was wrong, so those get treated like agreements instead.
+    v = torch.nan_to_num(b["cand_v"].float(), nan=-1e9)
+    clear = (v.gather(1, best[:, None])[:, 0] - v[:, 0]) >= args.margin
+    w = torch.where(over & clear, 1.0, args.agree_weight)
     ce = -(w * (tgt * torch.where(ok, joint, 0.0)).sum(1)).sum() / w.sum().clamp(min=1e-6)
 
     # KL to the reference on slot a, and on slot b given the target's best slot-a action.
@@ -257,6 +263,9 @@ def main() -> None:
     g.add_argument("--search-prior", type=float, default=0.1)
     g.add_argument("--search-worlds", type=int, default=1)
     g.add_argument("--search-depth", type=int, default=1, choices=[1, 2])
+    g.add_argument("--search-chance-branching", action="store_true",
+                   help="Nessie-style teacher: enumerate crit/KO/secondary outcomes instead of averaging "
+                        "seeds (stronger search-guided data, slower)")
     g.add_argument("--closed-sheets", action="store_true")
     g.add_argument("--my-team", type=Path, default=None, help="our side always plays this team file")
     g.add_argument("--speed-inference", action="store_true")
@@ -273,6 +282,10 @@ def main() -> None:
     t.add_argument("--prior", type=float, default=0.1, help="log-prob weight in the score, as in the search runs")
     t.add_argument("--agree-weight", type=float, default=1.0,
                    help="weight of decisions where search kept the policy's pick (0 = learn only from overrides)")
+    t.add_argument("--margin", type=float, default=0.0,
+                   help="an override only counts as a clear signal if search's value for its pick beats the "
+                        "policy's own candidate by at least this much (win-rate units); smaller gaps are "
+                        "simulation noise and get --agree-weight instead of 1.0")
     t.add_argument("--kl-coef", type=float, default=0.1, help="pull towards --init")
     t.add_argument("--vf-coef", type=float, default=0.5)
     t.add_argument("--val-frac", type=float, default=0.05)

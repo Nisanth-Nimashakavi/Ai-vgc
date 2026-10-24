@@ -76,21 +76,121 @@ KEYS = ["tok_cat", "tok_num", "mv_cat", "mv_dyn", "dmg", "glob", "act_tok", "mas
 _W: dict = {}
 
 
+def validate_observation_contract(args) -> None:
+    if args.backend == "vgc-engine" and (args.native_closed_sheets or args.closed_sheets):
+        import vgc_engine
+        want = getattr(args, "native_cts_version", 1)
+        have = getattr(vgc_engine, "CTS_OBSERVATION_VERSION", 0)
+        supported = getattr(vgc_engine, "CTS_OBSERVATION_VERSIONS", (have,))
+        if want not in supported:
+            raise ValueError(
+                f"Requested native CTS v{want} but this vgc-engine reports "
+                f"CTS_OBSERVATION_VERSION={have}. Rebuild vgc-engine to match, or pass "
+                "--native-cts-version to select the built contract. (Old/mismatched encoders "
+                "can expose hidden information.)"
+            )
+        if not args.native_preview or not args.native_slots:
+            raise ValueError("Native CTS requires --native-preview and --native-slots")
+        args.native_closed_sheets = True
+        args.closed_sheets = True
+        args.observation_contract = f"native-cts-v{want}"
+    if args.closed_sheets and (args.format.endswith("bo3") or getattr(args, "native_bo3", False)):
+        raise ValueError("Closed-sheet training requires a Bo1 format, not a bo3 format")
+
+
+def showdown_actor_devices(dev: torch.device) -> tuple[str, ...]:
+    """Use all allocated rollout GPUs while reserving the learner when possible."""
+    if dev.type != "cuda":
+        return (str(dev),)
+    learner = dev.index if dev.index is not None else 0
+    devices = tuple(f"cuda:{i}" for i in range(torch.cuda.device_count()) if i != learner)
+    return devices or (f"cuda:{learner}",)
+
+
+def configure_training_contract(args, model):
+    """Preserve checkpoint inputs; refuse silent migration between observation contracts.
+
+    v1 is public-only (no inference); v2 re-adds speed/set/damage inference. A contract change
+    (Showdown->native, or v1<->v2) re-encodes the inputs the weights were trained on, so it must
+    be opted into explicitly with --allow-contract-migration."""
+    contract = getattr(model, "observation_contract", "showdown")
+    if args.backend == "vgc-engine" and args.closed_sheets:
+        want = getattr(args, "observation_contract", "native-cts-v1")  # set by validate_observation_contract
+        v2 = want in ("native-cts-v2", "native-cts-v3")
+        if contract != want and not getattr(args, "allow_contract_migration", False):
+            raise ValueError(
+                f"Native CTS cannot preserve checkpoint contract {contract!r}: {want} cannot silently adopt it. "
+                "Use --backend showdown for this checkpoint, initialize a fresh native policy, "
+                "or pass --allow-contract-migration to re-encode these weights for the new contract."
+            )
+        args.observation_contract = want
+        for key in ("speed_inference", "damage_inference", "set_guess"):
+            setattr(args, key, v2)  # v1 strips inference; v2 enables it
+    elif args.backend == "showdown":
+        args.observation_contract = contract
+        for key, enabled in getattr(model, "inference_features", {}).items():
+            if contract == "native-cts-v1":
+                setattr(args, key, False)
+            elif contract in ("native-cts-v2", "native-cts-v3"):
+                setattr(args, key, True)
+            else:
+                setattr(args, key, bool(getattr(args, key, False) or enabled))
+
+
+def require_native_cts_model(model, expected=None):
+    if getattr(model, "observation_contract", "showdown") not in ("native-cts-v1", "native-cts-v2", "native-cts-v3"):
+        raise ValueError("Native CTS opponent/learner requires native-cts inputs; incompatible checkpoint refused")
+    if expected is not None and model.observation_contract != expected:
+        raise ValueError(f"Native CTS contract mismatch: {model.observation_contract} != {expected}")
+
+
+def validate_pure_self_play(args, model, paths):
+    if not getattr(args, "pure_self_play", False):
+        return
+    provenance = getattr(model, "training_provenance", {})
+    family = provenance.get("origin_id")
+    if provenance.get("origin") != "random-self-play" or not family:
+        raise ValueError("Pure self-play requires a randomly initialized self-play checkpoint")
+    kinds = {k for k, v in (item.split(":") for item in args.mix.split(",")) if float(v) > 0}
+    if kinds - {"self", "pool"} or args.aux_coef:
+        raise ValueError("Pure self-play permits only self/pool opponents and no imitation auxiliary loss")
+    from ai_vgc.nn.player import load_policy
+    for path in paths:
+        other = load_policy(path)
+        p = other.training_provenance
+        if p.get("origin") != "random-self-play" or p.get("origin_id") != family:
+            raise ValueError(f"Pure self-play refuses an external training checkpoint: {path}")
+
+
 def _init(ports: list[int], fmt: str, concurrency: int, rating: float, teams: str | None = None,
           my_team: str | None = None, change_after_loss: bool = False, opp_change_after_loss: bool = False,
           closed_sheets: bool = False, speed_inference: bool = False, set_guess: bool = False,
           damage_inference: bool = False, device: str = "cpu", aux_coef: float = 0.0,
           native_max_turns: int = 128, native_seed: int = 0, native_preview: bool = False,
           native_slots: int = 0, native_horizon: int = 0, native_compile: bool = False,
-          native_learner_team: str | None = None, native_opponent_teams: str | None = None) -> None:
+          native_cts_version: int = 2, native_mirror_league: bool = False,
+          native_learner_team: str | None = None, native_opponent_teams: str | None = None,
+          native_opponent_team: str | None = None,
+          native_bo3: bool = False, native_ots: bool = True, native_ots_mix: float = 0.0,
+          actor_devices: tuple[str, ...] = ()) -> None:
     torch.set_num_threads(1)
+    if actor_devices:
+        identity = multiprocessing.current_process()._identity
+        actor = (identity[-1] - 1) if identity else 0
+        device = actor_devices[actor % len(actor_devices)]
+        if device.startswith("cuda"):
+            torch.cuda.set_device(device)
+        print(f"Showdown worker {os.getpid()} inference on {device}", flush=True)
     _W.update(ports=ports, fmt=fmt, concurrency=concurrency, rating=rating, teams=teams, my_team=my_team,
               change_after_loss=change_after_loss, opp_change_after_loss=opp_change_after_loss,
               closed_sheets=closed_sheets, speed_inference=speed_inference,
               set_guess=set_guess, damage_inference=damage_inference, device=device, aux_coef=aux_coef,
               native_max_turns=native_max_turns, native_seed=native_seed, native_preview=native_preview,
               native_slots=native_slots, native_horizon=native_horizon, native_compile=native_compile,
-              native_learner_team=native_learner_team, native_opponent_teams=native_opponent_teams)
+              native_cts_version=native_cts_version, native_mirror_league=native_mirror_league,
+              native_learner_team=native_learner_team, native_opponent_teams=native_opponent_teams,
+              native_opponent_team=native_opponent_team,
+              native_bo3=native_bo3, native_ots=native_ots, native_ots_mix=native_ots_mix)
 
 
 def _players(policy: str) -> dict:
@@ -139,10 +239,9 @@ def _players(policy: str) -> dict:
                                team=teams(), **common)
         _W["heuristic"] = SimpleHeuristicsPlayer(account_configuration=account("heur"),
                                                  team=teams(), **common)
-        for k in ("me", "self", "snap", "evalA", "evalB"):  # every model in the worker reads the same features
-            _W[k].speed_inference = _W.get("speed_inference", False)
-            _W[k].set_guess = (_W["teams"], _W["fmt"]) if _W.get("set_guess") and _W["teams"] else None
-            _W[k].damage_inference = _W.get("damage_inference", False)
+        from ai_vgc.nn.player import configure_inference
+        for k in ("me", "self", "snap", "evalA", "evalB"):
+            configure_inference(_W[k], _W["teams"], _W["fmt"])
         if _W.get("aux_coef", 0.0) > 0:  # label self-play episodes so the aux heads don't decay (rl.py --aux-coef)
             _W["me"].aux_labels = True
             _W["self"].aux_labels = True
@@ -168,7 +267,10 @@ def _native_model(path: str, device: str) -> torch.nn.Module:
         cached = cache[resolved]
     old_signature, model = cached
     if old_signature != signature:
-        model.load_state_dict(_state(resolved))
+        from ai_vgc.nn.player import restore_policy_metadata
+        ckpt = torch.load(resolved, map_location="cpu", weights_only=False)
+        model.load_state_dict(ckpt["state"])
+        restore_policy_metadata(model, ckpt)
         cache[resolved] = (signature, model)
     model.eval()
     return model
@@ -177,19 +279,8 @@ def _native_model(path: str, device: str) -> torch.nn.Module:
 def _load_into(player, path: str) -> None:
     """Give an opponent `player` the policy at `path`. Checkpoints with another architecture
     (e.g. archive/mb-bo3-do-v1, from before the blocked flag and opponent head) get their own model."""
-    from ai_vgc.nn.player import load_policy
-
-    device = _W.get("device", "cpu")
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
-    own = player.__dict__.setdefault("own_model", player.model)
-    if ckpt["config"] == own.config:
-        player.model = own
-        own.load_state_dict(ckpt["state"])
-    else:
-        cache = _W.setdefault("other_models", {})
-        if path not in cache:
-            cache[path] = load_policy(path, device)
-        player.model = cache[path]
+    from ai_vgc.nn.player import load_player_checkpoint
+    load_player_checkpoint(player, path, _W.get("teams"), _W["fmt"])
 
 
 def _flatten(episodes: list[tuple[list[dict], float]]) -> dict[str, np.ndarray]:
@@ -225,22 +316,48 @@ def _play_native(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, 
         torch.set_num_threads(1)
         device = _W.get("device", "cpu")
         learner = _native_model(policy, device)
+        opponent_team = _W.get("native_opponent_team")
+        if _W.get("native_mirror_league", False) and (kind in ("self", "bc", "pool") or kind.startswith("pool:")):
+            opponent_team = _W.get("native_learner_team") or opponent_team
+        if kind == "spec":
+            if not opp_path or "::" not in opp_path:
+                raise ValueError("native specialist requires MODEL::TEAM")
+            opp_path, opponent_team = opp_path.rsplit("::", 1)
         opponent = _native_model(opp_path, device) if opp_path else learner
+        if not _W.get("native_ots", True):
+            expected = f"native-cts-v{_W.get('native_cts_version', 2)}"
+            require_native_cts_model(learner, expected)
+            require_native_cts_model(opponent, expected)
         if opponent is not learner:
             for parameter in opponent.parameters():
                 parameter.requires_grad_(False)
 
         rollout_id = _W.get("native_rollout_id", 0)
         _W["native_rollout_id"] = rollout_id + 1
-        runner = NativeBatchSelfPlay(NativeVGCConfig(
+        config = NativeVGCConfig(
             fmt=_W["fmt"], teams_dir=_W.get("teams"), rating=_W["rating"],
             learner_team=_W.get("native_learner_team"),
             opponent_teams_dir=_W.get("native_opponent_teams"),
+            opponent_team=opponent_team,
             greedy=False, seed=((os.getpid() << 16) ^ _W.get("native_seed", 0)) + rollout_id,
             max_turns=_W.get("native_max_turns", 128),
             team_preview=_W.get("native_preview", False),
+            bo3=_W.get("native_bo3", False),
+            ots=_W.get("native_ots", True),
+            ots_mix=_W.get("native_ots_mix", 0.0),
             compile_inference=_W.get("native_compile", False),
-        ))
+        cts_version=_W.get("native_cts_version", 2),
+        )
+        # Keep a separate live matchup stream per frozen opponent. No old
+        # trajectory rows are retained: each call exports bootstrapped segments.
+        # Include the opponent version so replacing a file cannot change the
+        # opponent halfway through an existing game.
+        opponent_key = None if not opp_path else (str(Path(opp_path).resolve()), os.stat(opp_path).st_mtime_ns)
+        runner_key = (kind, opponent_key, opponent_team)
+        runners = _W.setdefault("native_runners", {})
+        if runner_key not in runners:
+            runners[runner_key] = NativeBatchSelfPlay(config)
+        runner = runners[runner_key]
         slots = _W.get("native_slots", 0)
         horizon = _W.get("native_horizon", 0)
         specialist = _W.get("native_learner_team") is not None
@@ -255,7 +372,8 @@ def _play_native(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, 
             data, _stats = runner.collect_persistent_league_data(
                 learner, opponent, slots, horizon,
             )
-        terminal_rewards = data["reward"][data["last"]].astype(np.float32, copy=False)
+        terminal_rewards = data["reward"][data.get("terminated", data["last"])].astype(np.float32, copy=False)
+        print("native_rollout " + json.dumps({"kind": kind, "checkpoint_mtime_ns": os.stat(policy).st_mtime_ns, **_stats}), flush=True)
         # Symmetric collection compacts p1/p2 episodes consecutively. Retain
         # the physical P1 result for familiar self-play win-rate reporting;
         # league collection has exactly one learner episode per game.
@@ -314,8 +432,14 @@ def _native_actor_configs(args, ports: list[int], dev: torch.device) -> list[dic
         native_slots=args.native_slots,
         native_horizon=args.native_horizon,
         native_compile=args.native_compile,
+        native_cts_version=args.native_cts_version,
+        native_mirror_league=bool(args.field_opponents),
         native_learner_team=str(args.my_team) if args.my_team else None,
         native_opponent_teams=str(args.native_opponent_teams) if args.native_opponent_teams else None,
+        native_opponent_team=None,
+        native_bo3=args.native_bo3,
+        native_ots=not args.native_closed_sheets,
+        native_ots_mix=args.native_ots_mix,
     ) for actor, device in enumerate(devices)]
 
 
@@ -348,10 +472,10 @@ class NativeActorPool:
             self.processes.append(process)
 
     def collect(self, jobs: list[tuple[str, str, str | None, int]]) -> list:
-        if len(jobs) != len(self.requests):
-            raise ValueError("native actor collection requires one horizon per actor")
-        for actor, job in enumerate(jobs):
-            self.requests[actor].put((actor, [job]))
+        if not jobs or len(jobs) % len(self.requests):
+            raise ValueError("native actor collection requires equal horizons per actor")
+        for actor in range(len(self.requests)):
+            self.requests[actor].put((actor, jobs[actor::len(self.requests)]))
         received: list = []
         for _ in self.requests:
             _actor, result, error = self.results.get()
@@ -392,6 +516,23 @@ def _native_snapshot_choice(pool: list[str], record: dict[str, dict[str, float]]
     return random.choices(pool, weights)[0]
 
 
+def native_mix_schedule(mix, count, eligible):
+    """Stratify multiple horizons so each update covers the requested mixture."""
+    kinds = [key for key in mix if key in eligible and mix[key] > 0]
+    if not kinds or count < 1:
+        raise ValueError("No eligible native horizons")
+    if count == 1:
+        return random.choices(kinds, [mix[key] for key in kinds])
+    total = sum(mix[key] for key in kinds)
+    exact = [count * mix[key] / total for key in kinds]
+    quotas = [int(value) for value in exact]
+    for index in sorted(range(len(kinds)), key=lambda i: exact[i] - quotas[i], reverse=True)[:count-sum(quotas)]:
+        quotas[index] += 1
+    schedule = [key for key, quota in zip(kinds, quotas) for _ in range(quota)]
+    random.shuffle(schedule)
+    return schedule
+
+
 def _native_record_snapshot_results(
     results: dict[str, list[float]],
     pool: list[str],
@@ -419,7 +560,7 @@ def _play(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, np.ndar
         # episode, rewarded by its own result; games 2-3 see the series context (series.py).
         if w["fmt"].endswith("bo3"):
             n = max(1, round(n / 2.4))
-        limit = 60 + (25 if w["fmt"].endswith("bo3") else 10) * n
+        limit = 180 + (25 if w["fmt"].endswith("bo3") else 30) * n
         if kind == "eval":  # meta-game entry: `policy` vs `opp_path`, nothing recorded
             a, b = w["evalA"], w["evalB"]
             _load_into(a, policy)
@@ -437,7 +578,10 @@ def _play(job: tuple[str, str, str | None, int]) -> tuple[str, dict[str, np.ndar
                 _W.pop(k, None)
             w = _players(policy)
             me = w["me"]
-        me.model.load_state_dict(_state(policy))
+        _load_into(me, policy)
+        if kind == "self":
+            from ai_vgc.nn.player import configure_inference
+            configure_inference(w["self"], _W.get("teams"), _W["fmt"])
         opp = w["snap" if kind in ("bc", "pool", "nash", "spec", "human") else kind]
         pool_team = None
         if kind == "spec":  # "model::team file": a specialist on its own team
@@ -520,16 +664,25 @@ def meta_add(ex, meta: dict, path: str, games: int, job_games: int) -> None:
 
 # ---------------------------------------------------------------- learner
 
-def gae(value_logit: np.ndarray, reward: np.ndarray, last: np.ndarray, lam: float):
+def gae(value_logit: np.ndarray, reward: np.ndarray, last: np.ndarray, lam: float,
+        terminated: np.ndarray | None = None, bootstrap: np.ndarray | None = None):
     """Advantages and returns with gamma = 1; values are win probabilities."""
+    terminated = last if terminated is None else terminated
+    bootstrap = np.zeros_like(reward) if bootstrap is None else bootstrap
+    if len(last) and not last[-1]:
+        raise ValueError("Rollout must end at an explicit segment boundary")
+    if np.any(terminated & ~last):
+        raise ValueError("Terminal transitions must end a segment")
+    if not np.isfinite(bootstrap).all() or np.any((bootstrap < 0) | (bootstrap > 1)):
+        raise ValueError("Bootstrap values must be finite win probabilities")
     v = 1 / (1 + np.exp(-value_logit.astype(np.float64)))
     adv = np.zeros_like(v)
     g = 0.0
     for i in range(len(v) - 1, -1, -1):
         if last[i]:
-            nxt, g = reward[i], 0.0
+            nxt, g = reward[i] + (0.0 if terminated[i] else bootstrap[i]), 0.0
         else:
-            nxt = v[i + 1]
+            nxt = reward[i] + v[i + 1]
         g = nxt - v[i] + lam * g
         adv[i] = g
     return adv.astype(np.float32), (adv + v).astype(np.float32)
@@ -540,7 +693,7 @@ def ppo_update(model, ref, data: dict[str, torch.Tensor], opt, args, value_only:
     from ai_vgc.nn.model import masked, slot_b_mask
 
     n = len(data["action"])
-    stats: dict[str, float] = {"pg": 0, "vf": 0, "ent": 0, "kl": 0, "clip": 0, "n": 0}
+    stats: dict[str, float] = {"pg": 0, "vf": 0, "ent": 0, "kl": 0, "clip": 0, "behavior_kl": 0, "n": 0}
     stop = False
     for _ in range(args.ppo_epochs):
         if stop:
@@ -573,6 +726,7 @@ def ppo_update(model, ref, data: dict[str, torch.Tensor], opt, args, value_only:
             lpa, lpb = F.log_softmax(masked(la.float(), ma), -1), F.log_softmax(masked(lb.float(), mb), -1)
             logp = lpa.gather(1, act[:, :1])[:, 0] + lpb.gather(1, act[:, 1:])[:, 0]
             ratio = torch.exp(logp - b["logp"])
+            behavior_kl = ((ratio - 1) - (logp - b["logp"])).mean()
             adv = b["adv"]
             pg = -torch.min(ratio * adv, ratio.clamp(1 - args.clip, 1 + args.clip) * adv).mean()
             vf = F.binary_cross_entropy_with_logits(v.float(), b["ret"].clamp(0, 1))
@@ -582,6 +736,15 @@ def ppo_update(model, ref, data: dict[str, torch.Tensor], opt, args, value_only:
                 rpa, rpb = F.log_softmax(masked(ra, ma), -1), F.log_softmax(masked(rb, mb), -1)
             kl = ((lpa.exp() * (lpa - rpa)).sum(-1) + (lpb.exp() * (lpb - rpb)).sum(-1)).mean()
             loss = pg + args.vf_coef * vf - args.ent_coef * ent + args.kl_coef * kl
+            replay = getattr(args, "_distill_replay", None)
+            if replay is not None:
+                from ai_vgc.nn.cts_distill import soft_losses
+                idx = torch.randint(len(replay["previous_a"]), (args.distill_replay_batch,))
+                rb = {key: value[idx].to(b["action"].device) for key, value in replay.items()}
+                replay_kl, replay_vf, _ = soft_losses(model, rb)
+                loss = loss + args.distill_replay_coef * (replay_kl + .1 * replay_vf)
+                stats.setdefault("replay_kl", 0.)
+                stats["replay_kl"] += replay_kl.item()
             if args.aux_coef > 0 and "opp" in b and model.config.get("aux"):
                 # Keep the opponent-action head from decaying under RL fine-tuning (it isn't
                 # otherwise touched by the PPO loss): same cross-entropy as train.py's `step`,
@@ -598,11 +761,13 @@ def ppo_update(model, ref, data: dict[str, torch.Tensor], opt, args, value_only:
                 loss = loss + args.aux_coef * aux_ce
                 stats.setdefault("aux", 0.0)
                 stats["aux"] += aux_ce.item()
+            if not torch.isfinite(loss).item():
+                raise FloatingPointError("Non-finite PPO loss; refusing to update the checkpoint")
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
             opt.step()
-            for k, x in (("pg", pg), ("vf", vf), ("ent", ent), ("kl", kl),
+            for k, x in (("pg", pg), ("vf", vf), ("ent", ent), ("kl", kl), ("behavior_kl", behavior_kl),
                          ("clip", ((ratio - 1).abs() > args.clip).float().mean())):
                 stats[k] += x.item()
             stats["n"] += 1
@@ -611,7 +776,8 @@ def ppo_update(model, ref, data: dict[str, torch.Tensor], opt, args, value_only:
             if (b["logp"] - logp).mean().item() > args.target_kl:
                 stop = True
                 break
-    return {k: v / max(stats["n"], 1) for k, v in stats.items() if k != "n"}
+    return ({k: v / max(stats["n"], 1) for k, v in stats.items() if k != "n"}
+            | {"optimizer_steps": stats["n"], "kl_early_stop": int(stop)})
 
 
 def _print_nash(meta: dict) -> None:
@@ -664,7 +830,9 @@ def save(model, path: Path, args, extra: dict) -> None:
 
     tmp = path.with_suffix(".tmp")
     torch.save({"state": {k: v.cpu() for k, v in model.state_dict().items()}, "config": model.config,
-                "sizes": vocab_sizes(), "args": {k: str(v) for k, v in vars(args).items()}} | extra, tmp)
+                "sizes": vocab_sizes(), "args": {k: str(v) for k, v in vars(args).items() if not k.startswith("_")},
+                "provenance": getattr(model, "training_provenance", {}),
+                "completed_games": getattr(args, "completed_games", 0)} | extra, tmp)
     tmp.replace(path)  # atomic, so workers never read a half-written file
 
 
@@ -734,14 +902,33 @@ def _process_iteration_results(parts, results, it: int, t_play: float, t0: float
     """Common post-processing for both vectorized and original modes. Returns the new snapshot's
     path when one was just saved and `nash` is in the mix, so the caller can re-run the meta-game
     eval for it (how it's dispatched differs per execution mode, so that part isn't done here)."""
+    prepare_started = time.perf_counter()
     data = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
-    adv, ret = gae(data.pop("value"), data.pop("reward"), data.pop("last"), args.lam)
+    adv, ret = gae(data.pop("value"), data.pop("reward"), data.pop("last"), args.lam,
+                   data.pop("terminated", None), data.pop("bootstrap", None))
+    data.pop("policy_version", None)
     data["adv"] = (adv - adv.mean()) / (adv.std() + 1e-8)
     data["ret"] = ret
-    data.pop("preview")
-    tens = {k: torch.from_numpy(v).to(dev) for k, v in data.items()}
+    preview_steps = int(data.pop("preview").sum())
+    tens = {}
+    for k, v in data.items():
+        t = torch.from_numpy(v)
+        if t.dtype in (getattr(torch, "uint32", torch.int64), getattr(torch, "uint16", torch.int64), getattr(torch, "uint64", torch.int64)):
+            t = t.to(torch.int64)
+        tens[k] = t.to(dev)
+    if dev.type == "cuda":
+        torch.cuda.synchronize(dev)
+    prepare_s = time.perf_counter() - prepare_started
+    update_started = time.perf_counter()
     st = ppo_update(model, ref, tens, opt, args, value_only=it <= args.value_warmup, vopt=vopt)
+    if dev.type == "cuda":
+        torch.cuda.synchronize(dev)
+    st["prepare_s"] = prepare_s
+    st["update_s"] = time.perf_counter() - update_started
+    st["preview_steps"] = preview_steps
 
+    save_started = time.perf_counter()
+    args.completed_games = getattr(args, "completed_games", 0) + sum(len(v) for v in results.values())
     save(model, current, args, {})
     save(model, args.out, args, {"iter": it, "opt": opt.state_dict()})
     reg_path = args.out.with_name(args.out.stem + "_reg.pt")
@@ -756,8 +943,10 @@ def _process_iteration_results(parts, results, it: int, t_play: float, t0: float
         pool.append(str(snap))
         if "nash" in {k for k, v in mix.items() if v > 0}:
             new_snap = str(snap)
+    st["checkpoint_s"] = time.perf_counter() - save_started
     wr = {k: (float(np.mean(v)), len(v)) for k, v in sorted(results.items()) if v}
-    rec = {"iter": it, "steps": len(adv), "play_s": round(t_play), "total_s": round(time.time() - t0),
+    rec = {"iter": it, "completed_games": args.completed_games,
+           "steps": len(adv), "play_s": round(t_play), "total_s": round(time.time() - t0),
            "win": wr, **{k: round(v, 4) for k, v in st.items()}}
     with log_path.open("a") as f:
         f.write(json.dumps(rec) + "\n")
@@ -769,7 +958,9 @@ def _process_iteration_results(parts, results, it: int, t_play: float, t0: float
     wtxt = " ".join(f"{k} {m:.1%}({n})" for k, (m, n) in wr.items())
     print(f"iter {it}: {wtxt} | steps {len(adv)} | pg {st['pg']:.3f} vf {st['vf']:.3f} "
           f"ent {st['ent']:.2f} kl {st['kl']:.3f} clip {st['clip']:.2f} | "
-          f"play {t_play:.0f}s total {time.time() - t0:.0f}s", flush=True)
+          f"play {t_play:.0f}s update {st['update_s']:.1f}s "
+          f"({int(st['optimizer_steps'])} steps, KL stop {bool(st['kl_early_stop'])}) "
+          f"total {time.time() - t0:.0f}s", flush=True)
 
     if dev.type == "cuda" and args.mem_limit < 1.0:
         for i in range(torch.cuda.device_count()):
@@ -795,18 +986,37 @@ def main() -> None:
                     help="draw a native vgc-engine game after this many policy turns")
     ap.add_argument("--native-preview", action="store_true",
                     help="use policy-selected VGC bring-four/lead preview; disabled by default for legacy checkpoint throughput")
+    ap.add_argument("--native-bo3", action="store_true",
+                    help="track best-of-three series in native rollouts; Bo3 always uses open team sheets")
+    ap.add_argument("--native-closed-sheets", action="store_true",
+                    help="disable OTS for native Bo1 rollouts (not allowed with --native-bo3)")
+    ap.add_argument("--native-ots-mix", type=float, default=0.0,
+                    help="fraction of native Bo1 slots trained with open team sheets while the rest "
+                         "stay closed (one net learns both views; 0 = all on --native-closed-sheets setting)")
+    ap.add_argument("--native-cts-version", type=int, default=1, choices=[1, 2, 3],
+                    help="native CTS contract: 1 (reduced), 2 (inference), 3 (inference + public tactical history)")
+    ap.add_argument("--allow-contract-migration", action="store_true",
+                    help="permit --init weights trained under a different observation contract (re-encodes inputs)")
     ap.add_argument("--native-seed", type=int, default=0, help="base RNG seed for native vgc-engine workers")
     ap.add_argument("--native-slots", type=int, default=0,
                     help="live native BattleBatch slots per worker horizon (0 keeps finite --job-games rollout)")
     ap.add_argument("--native-horizon", type=int, default=0,
                     help="normal native policy waves per horizon; requires --native-slots")
+    ap.add_argument("--native-matchups-per-update", type=int, default=1,
+                    help="stratified matchup horizons per actor per PPO update")
     ap.add_argument("--native-compile", action="store_true",
                     help="benchmark opt-in torch.compile for static native inference batches")
     ap.add_argument("--native-opponent-teams", type=Path, default=None,
                     help="optional opponent team pool for native league games (default: --teams)")
     ap.add_argument("--out", type=Path, default=Path("data/models/archive/mb-bo3-ppo-v1.pt"))
     ap.add_argument("--resume", action="store_true", help="continue from --out if it exists")
+    ap.add_argument("--pure-self-play", action="store_true",
+                    help="require random initialization and only descendants from the same self-play league")
     ap.add_argument("--iters", type=int, default=300)
+    ap.add_argument("--max-completed-games", type=int, default=0,
+                    help="native Bo1: stop after this cumulative number of completed games (may overshoot by one iteration)")
+    ap.add_argument("--wall-seconds", type=float, default=0,
+                    help="native Bo1: stop at an iteration boundary after this many seconds")
     ap.add_argument("--games", type=int, default=2048,
                     help="games per iteration (finite native mode); native persistent mode runs one horizon per worker")
     ap.add_argument("--job-games", type=int, default=32, help="games per worker job")
@@ -836,6 +1046,12 @@ def main() -> None:
     ap.add_argument("--snapshot-every", type=int, default=10)
     ap.add_argument("--ref", default=None, help="policy the KL penalty pulls towards (default: --init)")
     ap.add_argument("--pool-init", nargs="*", default=[], help="checkpoints that start the opponent pool")
+    ap.add_argument("--field-opponents", nargs="*", default=[],
+                    help="native persistent field mix: frozen generalists on the entire opposing team pool")
+    ap.add_argument("--distill-replay", type=Path, default=None,
+                    help="paired public teacher targets retained during PPO")
+    ap.add_argument("--distill-replay-coef", type=float, default=.2)
+    ap.add_argument("--distill-replay-batch", type=int, default=128)
     ap.add_argument("--meta-games", type=int, default=128, help="games per pair for the double-oracle table")
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--ppo-epochs", type=int, default=3)
@@ -878,14 +1094,35 @@ def main() -> None:
                          "(e.g. 0.85); the checkpoint is already fresh since this is checked after each iteration's "
                          "save, so nn_rl.sh can resubmit --resume with fewer --vector-workers. 1.0 disables the check")
     args = ap.parse_args()
+    if args.max_completed_games < 0 or args.wall_seconds < 0:
+        ap.error("game and time limits must be non-negative")
+    if (args.max_completed_games or args.wall_seconds) and (
+            args.backend != "vgc-engine" or not args.native_slots or args.native_bo3):
+        ap.error("game and time limits require persistent native Bo1")
+    validate_observation_contract(args)
     if args.backend == "vgc-engine" and args.vectorized:
         raise ValueError("--backend vgc-engine uses native worker processes; --vectorized is not supported yet")
+    if args.native_bo3 and args.backend != "vgc-engine":
+        raise ValueError("--native-bo3 requires --backend vgc-engine")
+    if args.native_bo3 and args.native_closed_sheets:
+        raise ValueError("--native-bo3 requires open team sheets")
+    if args.native_bo3 and not args.native_preview:
+        raise ValueError("--native-bo3 requires --native-preview to preserve series teams and repeatable bring-four choices")
 
     if args.device.startswith("cuda") and torch.cuda.is_available():
         dev = torch.device(args.device)
     else:
         dev = torch.device("cpu")
-    model = load_policy(args.init, str(dev))
+    initial_path = args.out if args.resume and args.out.exists() else args.init
+    model = load_policy(initial_path, str(dev))
+    configure_training_contract(args, model)
+    validate_pure_self_play(args, model, [args.init, args.ref or args.init, *args.pool_init])
+    if args.backend == "vgc-engine" and args.closed_sheets:
+        for checkpoint in [args.ref or args.init, *args.pool_init, *args.field_opponents,
+                           *(entry.rsplit("::", 1)[0] for entry in args.specialists)]:
+            candidate = load_policy(checkpoint)
+            require_native_cts_model(candidate, args.observation_contract)
+            del candidate
     if dev.type == "cpu":
         model.share_memory()  # CPU Showdown workers can share these storage pages.
     ref = load_policy(args.ref or args.init, str(dev))
@@ -896,6 +1133,7 @@ def main() -> None:
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.0)
     vopt = torch.optim.AdamW(model.value.parameters(), lr=args.lr * 10, weight_decay=0.0)  # value warmup
     start = 0
+    args.completed_games = 0
     snap_dir = args.out.with_name(args.out.stem + "_snapshots")
     snap_dir.mkdir(parents=True, exist_ok=True)
     log_path = args.out.with_suffix(".log.jsonl")
@@ -906,40 +1144,52 @@ def main() -> None:
         if "opt" in ckpt:
             opt.load_state_dict(ckpt["opt"])
         start = ckpt.get("iter", 0)
+        args.completed_games = ckpt.get("completed_games", 0)
+        if "completed_games" not in ckpt and log_path.exists():
+            args.completed_games = sum(sum(v[1] for v in row["win"].values())
+                                       for line in log_path.read_text().splitlines()
+                                       if (row := json.loads(line))["iter"] <= start)
         print(f"resumed from {args.out} at iteration {start}", flush=True)
     reg_path = args.out.with_name(args.out.stem + "_reg.pt")
     if args.resume and args.reg_every and reg_path.exists():
         ref.load_state_dict(torch.load(reg_path, map_location=dev, weights_only=False)["state"])
         print(f"KL anchor from {reg_path}", flush=True)
     model.eval()  # no dropout: the sampled log-probs came from the eval-mode network
+    if args.distill_replay:
+        from ai_vgc.nn.cts_distill import load_replay
+        args._distill_replay = load_replay(args.distill_replay, training_only=True)
+        if not len(args._distill_replay["previous_a"]):
+            raise ValueError("distillation replay has no training rows")
 
     current = args.out.with_name(args.out.stem + "_current.pt")
     save(model, current, args, {})
     mix = {k: float(v) for k, v in (x.split(":") for x in args.mix.split(","))}
-    native_kinds = {"self", "bc", "pool"}
+    native_kinds = {"self", "bc", "pool", "spec", "field"}
     if args.backend == "vgc-engine":
         if any(weight < 0 for weight in mix.values()) or not any(mix.values()):
             raise ValueError("--mix needs at least one positive native opponent weight")
         unsupported = {kind for kind, weight in mix.items() if weight > 0 and kind not in native_kinds}
         if unsupported:
             raise ValueError(
-                "--backend vgc-engine supports only self, bc, and pool opponents; "
+                "--backend vgc-engine supports self, bc, pool, spec, and field opponents; "
                 f"unsupported: {', '.join(sorted(unsupported))}"
             )
+        if mix.get("spec", 0.0) > 0 and not args.specialists:
+            raise ValueError("native --mix spec needs at least one MODEL::TEAM --specialists entry")
         if bool(args.native_slots) != bool(args.native_horizon):
             raise ValueError("--native-slots and --native-horizon must be supplied together")
+        if mix.get("field", 0.) > 0 and (not args.field_opponents or not args.native_slots):
+            raise ValueError("native field mix requires --field-opponents and persistent --native-slots")
         if args.my_team and not args.native_slots:
             raise ValueError("native --my-team league collection requires --native-slots and --native-horizon")
         if args.native_slots < 0 or args.native_horizon < 0:
             raise ValueError("--native-slots and --native-horizon must be non-negative")
-        league_weight = sum(mix.get(kind, 0.0) for kind in ("bc", "pool"))
-        if league_weight and not args.my_team:
-            raise ValueError("native bc/pool league opponents require --my-team")
         if args.aux_coef:
             raise ValueError("native vgc-engine rollout does not provide --aux-coef labels")
         if args.native_actors < 0:
             raise ValueError("--native-actors must be non-negative")
     pool = [*args.pool_init, *sorted(str(p) for p in snap_dir.glob("iter_*.pt"))]
+    validate_pure_self_play(args, model, pool)
     if (args.backend == "vgc-engine" and mix.get("pool", 0.0) > 0 and not pool
             and not (mix.get("self", 0.0) > 0 or mix.get("bc", 0.0) > 0)):
         raise ValueError("native --mix pool needs --pool-init or a positive self/bc bootstrap weight")
@@ -960,6 +1210,8 @@ def main() -> None:
     procs = [ensure_server(p, args.showdown) for p in ports] if args.backend == "showdown" else []
     if args.backend == "showdown":
         print(f"{args.servers} Showdown servers on ports {ports[0]}-{ports[-1]}; learner on {dev}", flush=True)
+        if not args.vectorized:
+            print(f"Showdown rollout devices: {showdown_actor_devices(dev)}", flush=True)
     else:
         native_mode = "league" if set(mix) - {"self"} or args.my_team else "self-play"
         if dev.type == "cuda":
@@ -988,10 +1240,17 @@ def main() -> None:
         aux_coef=args.aux_coef,
         native_max_turns=args.native_max_turns,
         native_seed=args.native_seed,
+        native_bo3=args.native_bo3,
+        native_ots=not args.native_closed_sheets,
+        native_ots_mix=args.native_ots_mix,
     )
 
     # Vectorized mode: single-process asyncio with shared GPU inference
     if args.vectorized:
+        from dataclasses import fields
+        from ai_vgc.nn.vectorized import VectorizedWorkerConfig
+        vector_fields = {field.name for field in fields(VectorizedWorkerConfig)}
+        worker_config = {key: value for key, value in worker_config.items() if key in vector_fields}
         print(f"Vectorized mode: {args.vector_workers} worker process(es), each running {args.servers * args.concurrency} concurrent battles", flush=True)
 
         if args.vector_workers == 1:
@@ -1090,18 +1349,27 @@ def main() -> None:
         # are immediately refilled internally instead of rebuilding a tail
         # batch or reloading a model for every job.
         if args.backend == "vgc-engine" and args.native_slots:
+            native_started = time.monotonic()
             actor_pool = NativeActorPool(_native_actor_configs(args, ports, dev))
+            specialist_cursor = 0
             try:
                 for it in range(start + 1, args.iters + 1):
+                    if ((args.max_completed_games and args.completed_games >= args.max_completed_games)
+                            or (args.wall_seconds and time.monotonic() - native_started >= args.wall_seconds)):
+                        print(f"Training limit reached: {args.completed_games} completed games", flush=True)
+                        break
                     t0 = time.time()
                     jobs = []
-                    for _ in actor_pool.processes:
-                        kinds = [k for k, weight in mix.items()
-                                 if weight > 0 and (k != "pool" or pool)]
-                        if not kinds:
-                            raise ValueError("no eligible native rollout opponents for --mix")
-                        kind = random.choices(kinds, [mix[k] for k in kinds])[0]
-                        opponent = args.init if kind == "bc" else None
+                    eligible = [k for k, weight in mix.items()
+                                if weight > 0 and (k != "pool" or pool)
+                                and (k != "spec" or args.specialists)]
+                    schedule = native_mix_schedule(mix, len(actor_pool.processes) * args.native_matchups_per_update, eligible)
+                    for kind in schedule:
+                        opponent = (random.choice(args.field_opponents) if kind == "field"
+                                    else args.init if kind == "bc" else args.specialists[specialist_cursor % len(args.specialists)]
+                                    if kind == "spec" else None)
+                        if kind == "spec":
+                            specialist_cursor += 1
                         result_kind = kind
                         if kind == "pool":
                             opponent = _native_snapshot_choice(pool, native_pfsp)
@@ -1149,7 +1417,10 @@ def main() -> None:
                                                args.native_preview, args.native_slots, args.native_horizon,
                                                args.native_compile,
                                                str(args.my_team) if args.my_team else None,
-                                               str(args.native_opponent_teams) if args.native_opponent_teams else None)) as ex:
+                                               str(args.native_opponent_teams) if args.native_opponent_teams else None,
+                                               None,
+                                               args.native_bo3, not args.native_closed_sheets,
+                                               showdown_actor_devices(dev) if args.backend == "showdown" else ())) as ex:
                 if use_nash:
                     for p in pool:
                         if p not in meta["pool"]:

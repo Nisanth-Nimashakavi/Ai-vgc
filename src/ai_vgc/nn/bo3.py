@@ -60,6 +60,14 @@ class Adapter:
         if theirs is None:
             return None
         cands = preview_candidates(player.model, battle, player.rating)[:self.k]
+        if getattr(player, "change_after_loss", False) and not prev.get("won", True):
+            series = player.series_of.get(battle.battle_tag)
+            last_order = player.last_preview.get(series[0]) if series else None
+            if last_order:
+                last_leads = set(last_order.removeprefix("/team ")[:2])
+                diff_cands = [c for c in cands if set(c[0][:2]) != last_leads]
+                if diff_cands:
+                    cands = diff_cands
         team = list(battle.team.values())
         req = {"start": {"format": self.fmt, "role": battle.player_role,
                          "them": [_set(m, self.teams_dir) for m in theirs],

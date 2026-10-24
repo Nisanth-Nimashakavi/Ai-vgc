@@ -102,13 +102,16 @@ function build(st) {
 
 function tryChoose(battle, side, choice) {
   if (battle.choose(side, choice)) return '';
+  // Preserve the simulator's useful reason before clearChoice resets it.
+  const simError = battle.sides.find(s => s.id === side).choice.error || 'unknown choice error';
   // A move that the sim thinks needs no target (or another one): drop the targets.
   const bare = choice.split(',').map(c => c.trim().replace(/^(move \S+)( -?\d)?/, '$1')).join(', ');
   battle.sides.find(s => s.id === side).clearChoice();
-  if (battle.choose(side, bare)) return `retargeted ${choice}`;
+  if (battle.choose(side, bare)) return `retargeted ${choice} (${simError})`;
+  const bareError = battle.sides.find(s => s.id === side).choice.error || 'unknown bare-choice error';
   battle.sides.find(s => s.id === side).clearChoice();
   battle.choose(side, 'default');
-  return `default for ${choice}`;
+  return `default for ${choice}: ${simError}; bare: ${bareError}`;
 }
 
 function dump(battle) {
@@ -151,9 +154,13 @@ let keptSides = null;
 function play(json, sides, pairs, seeds, keep) {
   const ch = +sides.us.slice(1);
   const results = [];
+  // Parse once; each playout needs its own copy to mutate, but structuredClone of the
+  // already-parsed object is far cheaper than re-running JSON.parse on the same text
+  // once per (pair, seed) — this was the dominant cost for k*opp_k*seeds playouts/request.
+  const parsed = JSON.parse(json);
   for (const [us, them] of pairs) {
     for (const seed of seeds) {
-      const b = State.deserializeBattle(JSON.parse(json));
+      const b = State.deserializeBattle(structuredClone(parsed));
       b.prng = new PRNG([seed, 7, 11, 13]);
       b.send = () => {};
       let err = '';

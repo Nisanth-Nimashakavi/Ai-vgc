@@ -76,6 +76,7 @@ FIELDS = [Field.TRICK_ROOM, Field.ELECTRIC_TERRAIN, Field.GRASSY_TERRAIN, Field.
           Field.PSYCHIC_TERRAIN, Field.GRAVITY, Field.WONDER_ROOM, Field.MAGIC_ROOM]
 WEATHERS = [Weather.SUNNYDAY, Weather.RAINDANCE, Weather.SANDSTORM, Weather.SNOWSCAPE, Weather.HAIL,
             Weather.DESOLATELAND, Weather.PRIMORDIALSEA, Weather.DELTASTREAM]
+TERRAINS = [Field.ELECTRIC_TERRAIN, Field.GRASSY_TERRAIN, Field.MISTY_TERRAIN, Field.PSYCHIC_TERRAIN]
 SIDE = [SideCondition.TAILWIND, SideCondition.REFLECT, SideCondition.LIGHT_SCREEN,
         SideCondition.AURORA_VEIL, SideCondition.SAFEGUARD, SideCondition.MIST,
         SideCondition.QUICK_GUARD, SideCondition.WIDE_GUARD]
@@ -89,7 +90,7 @@ PROTECT_IDS = {"protect", "detect", "spikyshield", "kingsshield", "banefulbunker
 
 N_TOK = 1 + 2 + 4 + 6 + 6 + len(TYPES) + len(STATUSES) + len(BOOSTS) + len(EFFECTS) + 9
 N_MV = 7 + len(CATEGORIES) + len(TARGETS) + len(TYPES)
-N_DMG = 9  # 8 before the "blocked" flag; older checkpoints read the first 8
+N_DMG = 11  # 8 before blocked, 9 with blocked, 11 with 2HKO & double-target KO
 N_GLOB = len(WEATHERS) + len(FIELDS) + 2 * len(SIDE) + 6
 
 
@@ -283,7 +284,7 @@ def _dmg(battle: DoubleBattle, att: Pokemon, move: Move, dfn: Pokemon | None, at
                 foe_blocked(battle, att, ally, dfn_side, move, dfn, move.target in SINGLE_TARGET) is not None
     except KeyError:  # pseudo-moves with no data entry
         blocked = False
-    row = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, float(faster), 0.0, float(blocked)]
+    row = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, float(faster), 0.0, float(blocked), 0.0, 0.0]
     if move.category == MoveCategory.STATUS or not move.base_power:
         return row
     d = damage_pct(battle, att, dfn, move)
@@ -295,12 +296,22 @@ def _dmg(battle: DoubleBattle, att: Pokemon, move: Move, dfn: Pokemon | None, at
     row[1:6] = [min(lo, 200) / 100, min(hi, 200) / 100, float(lo >= hp), float(hi >= hp),
                 math.log2(eff) / 2 if eff > 0 else -1.5]
     row[7] = float(eff == 0)
+    row[9] = float(2 * lo >= hp)
+    # double target ko is filled when partner min damage is known or 0.0
     return row
 
 
 def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
+    native_cts = battle.__dict__.get("_native_cts", False)
+    # native-cts-v2 keeps v1's public ordering + structural zeroing but re-enables the
+    # closed-sheet inference (speed bounds, set guessing, damage) that the Rust encoder replicates.
+    native_v2 = battle.__dict__.get("_native_cts_v2", False)
+    native_v3 = battle.__dict__.get("_native_cts_v3", False)
+    native_strip = native_cts and not native_v2  # v1-only: drop inference-derived features
     v = vocab()
     ours, foes = _team(battle), _foe_team(battle)
+    if native_cts:
+        foes = sorted(foes, key=lambda mon: mon.species)
     mons: list[Pokemon | None] = ours + [None] * (6 - len(ours)) + foes + [None] * (6 - len(foes))
     our_act, foe_act = battle.active_pokemon, battle.opponent_active_pokemon
     act_ids = [[id(m) if m else None for m in our_act], [id(m) if m else None for m in foe_act]]
@@ -313,7 +324,7 @@ def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
     act_tok = np.full(4, -1, np.int8)
 
     spe: dict[int, float] = {}
-    for m in [*our_act, *foe_act]:
+    for m in ([] if native_strip else [*our_act, *foe_act]):
         if m is not None:
             spe[id(m)] = effective_speed(battle, m)[0]
 
@@ -325,7 +336,8 @@ def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
         slot = 2 * side + (0 if a else 1) if (a or b) else None
         if slot is not None:
             act_tok[slot] = i
-        item, ability, moves = _hidden(battle, mon, side == 0)
+        item, ability, moves = _hidden(battle, mon, side == 0) if not native_strip else (
+            mon.item, mon.ability, [(m, False) for m in _moves(mon)])
         tok_cat[i] = [v["species"].get(mon.species, 0), v["items"].get(item, 0), v["abilities"].get(ability, 0)]
         tok_num[i] = _mon_num(mon, side == 0, a, b)
         opp = foe_act if side == 0 else our_act
@@ -338,7 +350,7 @@ def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
             # A guessed move (closed sheets, `_hidden`) has no PP to show: -1 marks it as a guess.
             mv_dyn[i, k] = [-1.0, 0.0] if guessed else [move.current_pp / max(move.max_pp, 1),
                                                        float(move.is_last_used)]
-            if slot is not None:
+            if slot is not None and not native_strip:
                 for j in range(2):
                     dmg[slot, k, j] = _dmg(battle, mon, move, opp[j], spe[id(mon)], spe, ally, opp_live)
 
@@ -366,6 +378,38 @@ def encode(battle: DoubleBattle, rating: float = 0.0) -> dict[str, np.ndarray]:
                 for k, move in enumerate(_moves(mon)):
                     ser_mv[i, k] = ctx.mv(mon.name, i < 6, move.id)
         ser_glob[:] = ctx.glob()
+
+    if native_cts:
+        # Public projection shared by the Rust packed CTS encoder. The structural zeroing below
+        # (volatile/state columns, is-last-used, mega globals, selected proxy) applies to v1 AND v2:
+        # those columns are absent from the Rust public event adapter regardless of contract. Only
+        # the inference-derived features (opponent item/ability, guessed-move PP) are dropped for
+        # v1; v2 keeps them, filled from `_hidden`/`_dmg`/speed inference above.
+        if native_strip:
+            tok_cat[6:, 1:] = 0  # v1: no opponent item/ability
+        if not native_v3:
+            tok_num[:, 51:75] = 0
+        if not native_v3:
+            tok_num[:, 75] = 0
+        if not battle.teampreview:
+            tok_num[6:, 76] = tok_num[6:, 0]
+        if not native_v3:
+            tok_num[6:, 77] = 0
+        if not native_v3:
+            mv_dyn[:, :, 1] = 0
+        if native_strip:
+            mv_dyn[6:, :, 0] = (mv_cat[6:] != 0).astype(np.float16)  # v1: opp moves = presence only
+        if not native_v3:
+            glob[35:37] = 0
+        if battle.teampreview:
+            tok_num[:, 5:7] = 0
+            tok_num[:, 75] = 0
+            tok_num[6:, 76] = 0
+            mv_cat[6:] = 0
+            mv_dyn[6:] = 0
+            act_tok[:] = -1
+            glob[:] = 0
+            glob[33], glob[34] = 1, rating / 2000
 
     return {
         "tok_cat": tok_cat, "tok_num": tok_num, "mv_cat": mv_cat, "mv_dyn": mv_dyn,
@@ -437,4 +481,8 @@ def joint_mask(mask_b: np.ndarray, action_a: int) -> np.ndarray:
         m[action_a] = False
     if 27 <= action_a <= 46:
         m[27:47] = False
+    if 87 <= action_a <= 106:
+        m[87:107] = False
+    if action_a == 0 and m[1:7].any():
+        m[0] = False
     return m

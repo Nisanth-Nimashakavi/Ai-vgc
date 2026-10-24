@@ -21,9 +21,9 @@ from dataclasses import dataclass, field
 
 from poke_env import to_id_str
 
-N_SER_TOK = 4
-N_SER_MV = 2
-N_SER_GLOB = 5
+N_SER_TOK = 8
+N_SER_MV = 4
+N_SER_GLOB = 7
 
 GAME = re.compile(r'Game (\d)</strong> of <a href="/(game-bestof\d-[^"]+)"')
 _PLAYER = re.compile(r"^\|player\|(p[12])\|([^|\n]+)", re.M)
@@ -92,16 +92,18 @@ class Context:
         per = [s.get(nick) for s in self.side(ours)]
         n, last = len(per), per[-1]
         return [sum(bool(m and m.brought) for m in per) / n, sum(bool(m and m.led) for m in per) / n,
-                float(bool(last and last.brought)), float(bool(last and last.led))]
+                float(bool(last and last.brought)), float(bool(last and last.led)),
+                0.0, 1.0, 1.0, 0.0]
 
     def mv(self, nick: str, ours: bool, move_id: str) -> list[float]:
         per = [s.get(nick) for s in self.side(ours)]
         n = len(per)
         return [sum(bool(m and move_id in m.t1) for m in per) / n,
-                sum(bool(m and move_id in m.used) for m in per) / n]
+                sum(bool(m and move_id in m.used) for m in per) / n,
+                0.0, 0.0]
 
     def glob(self) -> list[float]:
         ours = sum(g.winner == self.me for g in self.games)
         theirs = sum(g.winner == self.them for g in self.games)
         return [1.0, float(len(self.games) >= 2), ours / 2, theirs / 2,
-                float(self.games[-1].winner == self.me)]
+                float(self.games[-1].winner == self.me), 0.0, 0.0]

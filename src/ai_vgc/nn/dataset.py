@@ -43,20 +43,32 @@ KEYS = ["tok_cat", "tok_num", "mv_cat", "mv_dyn", "dmg", "glob", "act_tok", "mas
 
 
 CLOSED = False  # set in each worker by build(closed=True)
+CTS_V3 = False
 
 
 def _closed_init() -> None:
-    global CLOSED
+    global CLOSED, CTS_V3
     CLOSED = True
+    CTS_V3 = False
 
 
-def _game(item: tuple[str, str, list[str]]) -> dict[str, np.ndarray] | None:
-    """One game from both views; `item` = (tag, log, logs of the series' earlier games)."""
+def _cts_v3_init() -> None:
+    global CLOSED, CTS_V3
+    CLOSED = True
+    CTS_V3 = True
+
+
+def _game(item: tuple[str, str, list[str]] | tuple[str, str, list[str], str]) -> dict[str, np.ndarray] | None:
+    """One game from both views; `item` = (tag, log, logs of the series' earlier games, optional fmt)."""
     from ai_vgc.nn.encode import encode, joint_mask
     from ai_vgc.nn.replay import player_info, replay, winner
     from ai_vgc.nn.series import Context
 
-    tag, log, earlier = item
+    if len(item) == 4:
+        tag, log, earlier, fmt = item  # type: ignore[misc]
+    else:
+        tag, log, earlier = item  # type: ignore[misc]
+        fmt = "gen9championsvgc2026regmc"
     try:
         win = winner(log)
     except Exception:
@@ -75,6 +87,12 @@ def _game(item: tuple[str, str, list[str]]) -> dict[str, np.ndarray] | None:
 
         def cb(battle, action, preview, opp, rating=rating, ctx=ctx):
             battle._series = ctx
+            if CTS_V3:
+                battle._native_cts = True
+                battle._native_cts_v2 = True
+                battle._native_cts_v3 = True
+                teams_dir = "data/teams/reg_mb" if "regmb" in fmt else "data/teams/reg_mc"
+                battle._guess = (teams_dir, fmt)
             e = encode(battle, rating)
             a = [int(action[0]), int(action[1])]
             if not preview:
@@ -121,9 +139,10 @@ def _chunk(items: list[tuple[str, str, list[str]]]) -> dict[str, np.ndarray] | N
 
 
 def build(path: Path, workers: int, limit: int | None, chunk: int = 100, out_dir: Path = OUT,
-          closed: bool = False) -> None:
+          closed: bool = False, cts_v3: bool = False) -> None:
     from ai_vgc.nn.series import series_key
 
+    fmt = path.stem.removeprefix("logs_")
     logs = json.loads(path.read_text())
     series: dict[str, dict[int, str]] = {}
     for v in logs.values():
@@ -134,28 +153,31 @@ def build(path: Path, workers: int, limit: int | None, chunk: int = 100, out_dir
         key = series_key(v[1])
         games = series.get(key[0], {}) if key else {}
         earlier = [games[n] for n in range(1, key[1]) if n in games] if key else []
-        if closed:  # every game, Bo1 or any game of a Bo3, without series context
-            items.append((tag, v[1], []))
+        if closed or cts_v3:  # every game, Bo1 or any game of a Bo3, without series context
+            items.append((tag, v[1], [], fmt))
             continue
         # A series missing an earlier game (22% on M-C) would mislabel the game number: no context.
-        items.append((tag, v[1], earlier if key and len(earlier) == key[1] - 1 else []))
+        items.append((tag, v[1], earlier if key and len(earlier) == key[1] - 1 else [], fmt))
     del logs, series
     if limit:
         items = items[:limit]
     chunks = [items[i:i + chunk] for i in range(0, len(items), chunk)]
-    fmt = path.stem.removeprefix("logs_")
     t = time.time()
     parts = []
     # "spawn", not fork: poke-env runs battles on a background event-loop thread,
     # and a forked worker inherits the loop without the thread, so it hangs.
+    init_fn = _cts_v3_init if cts_v3 else (_closed_init if closed else None)
     with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"),
-                             initializer=_closed_init if closed else None) as pool:
+                             initializer=init_fn) as pool:
         for i, part in enumerate(pool.map(_chunk, chunks), 1):
             if part is not None:
                 parts.append(part)
             if i % 50 == 0 or i == len(chunks):
                 n = sum(len(p["action"]) for p in parts)
                 print(f"  {fmt}: {i}/{len(chunks)} chunks, {n} decisions, {time.time() - t:.0f}s", flush=True)
+    if not parts:
+        print(f"  {fmt}: no decisions generated")
+        return
     data = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{fmt}.npz"
@@ -174,13 +196,18 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=OUT, help="folder for the .npz files")
     ap.add_argument("--closed", action="store_true",
                     help="closed team sheets: hide the opponent's sheet, no series context")
+    ap.add_argument("--cts-v3", action="store_true",
+                    help="closed team sheets with native CTS v3 contract (sorted species, inference, parity)")
     args = ap.parse_args()
     from ai_vgc.nn.encode import vocab
     vocab()  # write the vocab file once, before workers race to create it
+    if args.cts_v3 and args.out == OUT:
+        args.out = Path("data/nn_cts_v3")
     for path in sorted(args.logs.glob("logs_*.json")):
         if args.formats and path.stem.removeprefix("logs_") not in args.formats:
             continue
-        build(path, args.workers, args.limit, out_dir=args.out, closed=args.closed)
+        build(path, args.workers, args.limit, out_dir=args.out, closed=args.closed or args.cts_v3,
+              cts_v3=args.cts_v3)
 
 
 if __name__ == "__main__":

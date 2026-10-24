@@ -132,7 +132,7 @@ def main() -> None:
 
     proc = ensure_server(args.port, args.showdown)
     common = dict(battle_format=args.format, max_concurrent_battles=args.concurrency,
-                  accept_open_team_sheet=not args.closed_sheets,
+                  accept_open_team_sheet=not args.closed_sheets, start_timer_on_battle_start=True,
                   log_level=40, server_configuration=ServerConfiguration(
                       f"ws://localhost:{args.port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?"))
     pa, pb = (NNPlayer(load_policy(entries[pairs[0][0]]), args.rating, args.greedy, account_configuration=account(n),

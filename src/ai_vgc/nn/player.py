@@ -43,6 +43,7 @@ import json
 import os
 import random
 import re
+import sys
 import time
 import warnings
 import weakref
@@ -60,10 +61,13 @@ from poke_env import (
     ServerConfiguration,
     ShowdownServerConfiguration,
 )
-from poke_env.battle import AbstractBattle, DoubleBattle
+from poke_env.battle import AbstractBattle, DoubleBattle, Move, Pokemon
 from poke_env.data import to_id_str
 from poke_env.environment import DoublesEnv
 from poke_env.player import BattleOrder, Player, SimpleHeuristicsPlayer
+from poke_env.player.battle_order import (
+    DoubleBattleOrder, SingleBattleOrder, PassBattleOrder, DefaultBattleOrder, ForfeitBattleOrder
+)
 
 from ai_vgc.nn.encode import N_MV, encode
 from ai_vgc.nn.model import Policy, masked, slot_b_mask
@@ -95,10 +99,79 @@ AbstractBattle.get_pokemon = _get_pokemon_forme
 def load_policy(path: str | Path, device: str = "cpu") -> Policy:
     ckpt = torch.load(path, map_location=device, weights_only=False)
     sizes = ckpt["sizes"]
+    config = dict(ckpt["config"])
     # The move table is a buffer in the state dict, so zeros are enough here.
-    model = Policy(sizes, np.zeros((sizes["moves"], N_MV), np.float32), **ckpt["config"])
-    model.load_state_dict(ckpt["state"])
+    model = Policy(sizes, np.zeros((sizes["moves"], N_MV), np.float32), **config)
+    state = ckpt["state"]
+    if getattr(model, "series", False):
+        for attr, key in [("ser_tok", "ser_tok.weight"), ("ser_mv", "ser_mv.weight"), ("ser_glob", "ser_glob.weight")]:
+            if hasattr(model, attr) and key in state:
+                target_w = getattr(model, attr).weight
+                src_w = state[key]
+                if src_w.shape != target_w.shape:
+                    new_w = target_w.clone().detach()
+                    min_0 = min(new_w.shape[0], src_w.shape[0])
+                    min_1 = min(new_w.shape[1], src_w.shape[1])
+                    new_w[:min_0, :min_1] = src_w[:min_0, :min_1]
+                    state[key] = new_w
+    model.load_state_dict(state)
+    restore_policy_metadata(model, ckpt)
     return model.to(device).eval()
+
+
+def restore_policy_metadata(model, ckpt):
+    """Weights and their observation contract must always travel together."""
+    # RL checkpoints store booleans as strings; bool("False") is True.
+    saved_args = ckpt.get("args", {})
+    model.observation_contract = saved_args.get("observation_contract", "showdown")
+    model.training_provenance = ckpt.get("provenance", {})
+    model.inference_features = {
+        key: str(saved_args.get(key, False)).lower() == "true"
+        for key in ("speed_inference", "damage_inference", "set_guess")
+    }
+
+
+def _set_native_cts_flags(battle, model) -> None:
+    """Mark a battle with the policy's native-CTS contract so `encode` matches the Rust
+    packed encoder. `_native_cts` selects the public projection (v1 and v2 share ordering and
+    structural zeroing); `_native_cts_v2` additionally re-enables the closed-sheet inference."""
+    contract = getattr(model, "observation_contract", "")
+    battle._native_cts = contract in ("native-cts-v1", "native-cts-v2", "native-cts-v3")
+    battle._native_cts_v2 = contract in ("native-cts-v2", "native-cts-v3")
+    battle._native_cts_v3 = contract == "native-cts-v3"
+
+
+def load_player_checkpoint(player, path, teams_dir, fmt):
+    """Refresh an existing player, including same-architecture checkpoint switches."""
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if ckpt["config"] != player.model.config:
+        player.model = load_policy(path, str(next(player.model.parameters()).device))
+    else:
+        player.model.load_state_dict(ckpt["state"])
+        restore_policy_metadata(player.model, ckpt)
+        player.model.eval()
+    configure_inference(player, teams_dir, fmt)
+
+
+def configure_inference(player, teams_dir, fmt, *, speed=False, damage=False, guesses=False):
+    """Restore the observation features used to train this particular policy."""
+    if teams_dir is None:
+        from ai_vgc.teams import TEAMS_DIR
+        teams_dir = TEAMS_DIR
+    saved = getattr(player.model, "inference_features", {})
+    player.speed_inference = speed or saved.get("speed_inference", False)
+    player.damage_inference = damage or saved.get("damage_inference", False)
+    player.set_guess = (str(teams_dir), fmt) if guesses or saved.get("set_guess", False) else None
+    contract = getattr(player.model, "observation_contract", "")
+    if contract == "native-cts-v1":
+        # v1 is a deliberately public-only contract: no speed/damage/set inference.
+        player.speed_inference = player.damage_inference = False
+        player.set_guess = None
+    elif contract in ("native-cts-v2", "native-cts-v3"):
+        # v2 re-adds the closed-sheet inference the Rust encoder now replicates
+        # (speed bounds, set guessing, damage) so train and live play match.
+        player.speed_inference = player.damage_inference = True
+        player.set_guess = (str(teams_dir), fmt)
 
 
 # Optional: compile model for faster inference (PyTorch 2.0+)
@@ -217,11 +290,13 @@ def sample_packed_batch(
 
 def _pick_slot(model: Policy, enc, b: dict, m: torch.Tensor, g: torch.Tensor, slot: int, a0: torch.Tensor = None) -> tuple[torch.Tensor, torch.Tensor]:
     """Pick one legal action for a slot, even under numerical sampling faults."""
-    legal = m[:, 0] if slot == 0 else slot_b_mask(m[:, 1], a0)
-    # Preserve the existing no-legal-action fallback and use the same repaired
-    # mask both for logits and as a postcondition on multinomial's output.
-    legal = legal.clone()
-    legal[~legal.any(1), 0] = True
+    raw_legal = m[:, slot]
+    legal = raw_legal if slot == 0 else slot_b_mask(raw_legal, a0)
+    # Never restore excluded choices: that can emit duplicate switches and
+    # PPO would recompute a different likelihood from this rollout record.
+    # An empty conditional mask is an engine/action-contract error.
+    if not legal.any(1).all():
+        raise RuntimeError(f"no compatible joint action for policy slot {slot}")
     logits = masked(
         model.slot_logits(enc, b, slot) if slot == 0 else model.slot_logits(enc, b, 1, a0),
         legal,
@@ -344,6 +419,71 @@ def batcher(model: Policy) -> _Batcher:
     return _BATCHERS[model]
 
 
+BENEFICIAL_ALLY_MOVES = frozenset({
+    "pollenpuff", "helpinghand", "healpulse", "coaching", "floralhealing",
+    "holdhands", "decorate", "instruct", "speedswap", "powerswap", "guardswap",
+    "powertrick", "afteryou", "allyswitch", "acupressure", "aromaticmist",
+    "swagger", "flatter", "purify", "lifedew", "junglehealing",
+})
+
+
+def sanitize_order_targets(order: BattleOrder, battle: DoubleBattle) -> BattleOrder:
+    """Ensure damaging or harmful moves never target allies (-1, -2)."""
+    if not isinstance(order, DoubleBattleOrder):
+        return order
+    opps = battle.opponent_active_pokemon
+    default_foe = 1
+    if len(opps) > 0 and (opps[0] is None or opps[0].fainted):
+        default_foe = 2
+
+    for single in (order.first_order, order.second_order):
+        if single is not None and isinstance(single.order, Move) and single.move_target in (-1, -2):
+            if single.order.id not in BENEFICIAL_ALLY_MOVES:
+                single.move_target = default_foe
+    return order
+
+
+def safe_action_to_order(action: np.ndarray, battle: DoubleBattle) -> BattleOrder:
+    """Convert an action to a BattleOrder safely without silent random move fallbacks."""
+    if action[0] == -2 and action[1] == -2:
+        return DefaultBattleOrder()
+    if action[0] == -1 or action[1] == -1:
+        return ForfeitBattleOrder()
+
+    order1, order2 = None, None
+    try:
+        order1 = DoublesEnv._action_to_order_individual(action[0], battle, False, 0)
+    except Exception:
+        pass
+    try:
+        order2 = DoublesEnv._action_to_order_individual(action[1], battle, False, 1)
+    except Exception:
+        pass
+
+    if order1 is not None and order2 is not None:
+        if getattr(order1, "terastallize", False) and getattr(order2, "terastallize", False):
+            order2.terastallize = False
+        if getattr(order1, "mega", False) and getattr(order2, "mega", False):
+            order2.mega = False
+        if (isinstance(getattr(order1, "order", None), Pokemon) and
+                isinstance(getattr(order2, "order", None), Pokemon) and
+                order1.order is order2.order):
+            order2 = PassBattleOrder()
+
+        joined = DoubleBattleOrder.join_orders([order1], [order2])
+        if joined:
+            return sanitize_order_targets(joined[0], battle)
+
+    try:
+        ord_fallback = DoublesEnv.action_to_order(action, battle, strict=False)
+        return sanitize_order_targets(ord_fallback, battle)
+    except Exception:
+        orders = DoubleBattleOrder.join_orders(*battle.valid_orders)
+        if orders:
+            return sanitize_order_targets(orders[0], battle)
+        return DoubleBattleOrder()
+
+
 class NNPlayer(Player):
     def __init__(self, model: Policy | str | Path, rating: float = 1700, greedy: bool = False,
                  record: bool = False, rules: bool = True, **kwargs):
@@ -391,6 +531,7 @@ class NNPlayer(Player):
         await super()._handle_battle_message(split_messages)
 
     async def _decide(self, battle: DoubleBattle, mask: np.ndarray, preview: bool) -> np.ndarray:
+        _set_native_cts_flags(battle, self.model)
         obs = encode(battle, self.rating)
         obs["mask"] = mask
         action, logp, value = await batcher(self.model).decide(obs, self.greedy)
@@ -410,6 +551,13 @@ class NNPlayer(Player):
 
     async def teampreview(self, battle: AbstractBattle) -> str:
         assert isinstance(battle, DoubleBattle)
+        _set_native_cts_flags(battle, self.model)
+        if getattr(self.model, "observation_contract", "") == "native-cts-v3":
+            # V3 distillation and the native adapter include public set inference
+            # at preview too. Previously these flags were only set in choose_move.
+            battle._spd_on = self.speed_inference
+            battle._dmg_on = self.damage_inference
+            battle._guess = self.set_guess
         self.attach_series(battle)
         order = await self._choose_preview(battle)
         if not order.startswith("/team "):  # e.g. PreviewPlayer's probe forfeits
@@ -437,11 +585,23 @@ class NNPlayer(Player):
                 and random.random() < self.repeat[bool(prev[-1]["won"])]:
             return self.last_preview[series[0]]
         if self.change_after_loss and prev and not prev[-1]["won"] and series[0] in self.last_preview:
-            from ai_vgc.nn.preview import preview_candidates
+            from ai_vgc.nn.preview import preview_candidates, group_preview_candidates
 
             last = set(self.last_preview[series[0]].removeprefix("/team ")[:2])
-            order = "/team " + next(c for c, _ in preview_candidates(self.model, battle, self.rating)
-                                    if set(c[:2]) != last)
+            cands = preview_candidates(self.model, battle, self.rating)
+            ranked_groups = group_preview_candidates(cands, len(battle.team))
+            alt = None
+            for _, _, best_order, orders in ranked_groups:
+                if set(best_order[:2]) != last:
+                    alt = best_order
+                    break
+                for o, _ in orders:
+                    if set(o[:2]) != last:
+                        alt = o
+                        break
+                if alt is not None:
+                    break
+            order = ("/team " + alt) if alt is not None else await self._policy_preview(battle)
         else:
             order = await self._policy_preview(battle)
         if series:
@@ -452,12 +612,35 @@ class NNPlayer(Player):
         return self.series_of.get(battle.battle_tag, ("", 1))[1] > 1
 
     async def _policy_preview(self, battle: DoubleBattle) -> str:
-        if self.vary and self.later_game(battle):
-            from ai_vgc.nn.preview import preview_candidates
+        # PPO needs sampled lead/back decisions and their behaviour log-probs.
+        # Enumerating a greedy composition bypasses _decide and silently drops
+        # every preview from the training trajectory.
+        if self.record or not self.greedy:
+            return await self._sample_preview(battle)
+        from ai_vgc.nn.preview import preview_candidates, group_preview_candidates
 
-            cands = preview_candidates(self.model, battle, self.rating)[:self.vary_k]
-            p = np.exp(np.array([lp for _, lp in cands]) - cands[0][1])
-            return "/team " + cands[np.random.choice(len(cands), p=p / p.sum())][0]
+        cands = preview_candidates(self.model, battle, self.rating)
+        ranked_groups = group_preview_candidates(cands, len(battle.team))
+
+        # In later games of a series with vary on, sample from top group compositions
+        if self.vary and self.later_game(battle) and ranked_groups:
+            pool = ranked_groups[:self.vary_k]
+            lps = np.array([g_lp for _, g_lp, _, _ in pool])
+            p = np.exp(lps - lps.max())
+            p /= p.sum()
+            chosen_group = pool[np.random.choice(len(pool), p=p)]
+            return "/team " + chosen_group[2]
+
+        # Greedily choose the top 4-mon composition out of the 15 unique groups
+        if ranked_groups:
+            return "/team " + ranked_groups[0][2]
+
+        if cands:
+            return "/team " + cands[0][0]
+
+        return await self._sample_preview(battle)
+
+    async def _sample_preview(self, battle: DoubleBattle) -> str:
         team = list(battle.team.values())
         for mon in team:
             mon._selected_in_teampreview = False
@@ -483,7 +666,7 @@ class NNPlayer(Player):
         if self.rules:
             mask = apply_rules(battle, mask)
         action = await self._decide(battle, mask, False)
-        return DoublesEnv.action_to_order(action, battle, strict=False)
+        return safe_action_to_order(action, battle)
 
     def _battle_finished_callback(self, battle: AbstractBattle) -> None:
         tag = battle.battle_tag
@@ -506,6 +689,24 @@ class NNPlayer(Player):
                 self.episode_tags.append(battle.battle_tag)
             reward = 1.0 if battle.won else 0.0 if battle.lost else 0.5
             self.episodes.append((steps, reward))
+        if getattr(self, "_eval_target_n", None):
+            if getattr(self, "_eval_save_dir", None) is not None:
+                folder = self._eval_save_dir
+                folder.mkdir(parents=True, exist_ok=True)
+                row = {"tag": battle.battle_tag, "won": battle.won, "lost": battle.lost,
+                       "turns": battle.turn, "log": battle._build_replay_log(),
+                       "brought": [m.species for m in battle.team.values() if m.selected_in_teampreview]}
+                with (folder / "games.jsonl").open("a") as handle:
+                    handle.write(json.dumps(row) + "\n")
+            w, n = self.n_won_battles, self.n_finished_battles
+            interval = max(1, getattr(self, "_eval_log_every", 1))
+            if interval == 1:
+                res = "WIN" if battle.won else "LOSS" if battle.lost else "TIE"
+                print(f"[Game {n}/{self._eval_target_n}] {res} | Score: {w}-{n - w} ({w / max(n, 1):.1%})", flush=True)
+            elif n % interval == 0 or n == self._eval_target_n:
+                losses = self.n_lost_battles
+                print(f"[Game {n}/{self._eval_target_n}] Wins: {w} | Losses: {losses} | "
+                      f"Draws: {n - w - losses} | Total: {n} | Win rate: {w / max(n, 1):.1%}", flush=True)
 
     def drain_aux_labels(self) -> None:
         """Fill in each pending episode's `opp` (opponent move/target) labels by re-replaying
@@ -759,6 +960,32 @@ class ChallengeMixin:
     stop_after_match = False  # set by the first Ctrl-C: finish the current game / Bo3 series, then stop
     timer = False  # turn the battle timer on in every game (so opponents can't stall)
 
+    def _journal_battle_message(self, split_messages):
+        # Keep unfinished games inspectable after a network drop. Completed
+        # replays alone omit precisely the failures a ladder audit must count.
+        header = split_messages[0][0] if split_messages and split_messages[0] else ""
+        if self.save_dir is not None and re.fullmatch(r">battle-[a-zA-Z0-9-]+", header):
+            try:
+                self.save_dir.mkdir(parents=True, exist_ok=True)
+                with (self.save_dir / f"{header[1:]}.protocol.log").open("a") as f:
+                    f.write("\n".join("|".join(m) for m in split_messages) + "\n")
+            except OSError as error:
+                self.logger.warning("could not journal battle protocol: %s", error)
+
+    def record_interruption(self, reason: str) -> None:
+        if self.save_dir is None:
+            return
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        with (self.save_dir / "interruptions.jsonl").open("a") as f:
+            for battle in list(self._battles.values()):
+                if not battle.finished:
+                    f.write(json.dumps({"time": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "tag": battle.battle_tag, "user": self.username,
+                                        "model": getattr(self, "model_name", None),
+                                        "opponent": battle.opponent_username,
+                                        "reason": reason, "result": "unresolved",
+                                        "log": battle._build_replay_log()}) + "\n")
+
     async def teampreview(self, battle: AbstractBattle) -> str:
         if self.timer:
             await self.ps_client.send_message("/timer on", battle.battle_tag)
@@ -874,6 +1101,7 @@ class ChallengeMixin:
         webbrowser.open(page_url)
 
     async def _handle_battle_message(self, split_messages: list[list[str]]):
+        self._journal_battle_message(split_messages)
         await super()._handle_battle_message(split_messages)
         # poke-env reads the open team sheets but leaves them out of the battle's log; the scraped
         # human logs have them (right after |teampreview|), and replay.py needs them for full sets.
@@ -908,6 +1136,12 @@ class ChallengeMixin:
                    # Team file the pool last handed out (ladder plays one match at a time).
                    "team": getattr(self._team, "last_name", None),
                    "model": getattr(self, "model_name", None),
+                   "inference": {"speed": self.speed_inference, "damage": self.damage_inference,
+                                 "set_guess": self.set_guess},
+                   "search": {k: getattr(self, k, None) for k in
+                              ("backend", "worlds", "k", "opp_k", "seeds", "prior", "depth", "double_oracle",
+                               "solver", "worst_case_weight", "regret_iterations", "value_device")}
+                             | {"public_leaf": os.environ.get("VGC_PUBLIC_LEAF", "0") == "1"},
                    # The bot's view of the battle, as Showdown sent it (our side's exact HP included).
                    "log": battle._build_replay_log()}
             with open(self.save_dir / "games.jsonl", "a") as f:
@@ -1018,6 +1252,9 @@ def _public_login(player: Player, password: str | None) -> None:
         await client.change_avatar(client._avatar)
 
     client.log_in = log_in
+    # Public players are constructed with start_listening=False: model/search
+    # initialization must not race the default poke-env authentication handler.
+    client._listening_coroutine = asyncio.run_coroutine_threadsafe(client.listen(), client.loop)
 
 
 def main() -> None:
@@ -1049,6 +1286,8 @@ def main() -> None:
                     help="showdown: play.pokemonshowdown.com (--accept only; password from $PS_PASSWORD or a prompt)")
     ap.add_argument("--save-dir", type=Path, default=Path("data/live_games"),
                     help="--accept: where each game goes (games.jsonl and one HTML replay per game)")
+    ap.add_argument("--save-battles", action="store_true",
+                    help="offline evaluation: save each completed public battle log under --save-dir")
     ap.add_argument("--logs-dir", type=Path, default=Path("data/bot_logs"),
                     help="--accept: also add each game to <dir>/logs_<format>.json, the scraped logs' layout "
                          "(kept out of data/battle_logs, so training only uses them when asked)")
@@ -1059,18 +1298,32 @@ def main() -> None:
                     help="challenge these accounts (e.g. scripts/vgcbench_bot.py) --n times in total, "
                          "one battle per account at a time")
     ap.add_argument("--search", action="store_true", help="pick move-turn actions by one-turn search (search.py)")
-    ap.add_argument("--search-backend", choices=["showdown", "vgc-engine"], default="showdown",
-                    help="play search playouts in Showdown (default) or the in-process Rust vgc-engine")
+    ap.add_argument("--search-preset", choices=["mikumiku"],
+                    help="reported later search dimensions: Rust, 16 worlds, 8x8 actions, 16 seeds; our 50/50 regret blend")
+    ap.add_argument("--search-solver", choices=["lp", "regret"], default="regret")
+    ap.add_argument("--search-worst-case-weight", type=float, default=0.5,
+                    help="regret solver: worst-case weight in [0,1], remainder predicted opponent value (default: 0.5)")
+    ap.add_argument("--search-regret-iterations", type=int, default=2048)
+    ap.add_argument("--search-value-device", default="cpu", help="device for batched search leaf values, e.g. cuda:0")
+    ap.add_argument("--search-backend", choices=["showdown", "vgc-engine", "rust"], default="vgc-engine",
+                    help="play search playouts in in-process Rust vgc-engine (default) or Showdown")
     ap.add_argument("--opp-model", default=None,
                     help="checkpoint with the opponent-action head (--aux) for --search; without one, "
                          "the opponent's options are a random sample, equally likely")
     ap.add_argument("--search-k", type=int, default=6, help="our candidate joint actions")
     ap.add_argument("--search-opp-k", type=int, default=6, help="the opponent's candidate joint actions")
-    ap.add_argument("--search-seeds", type=int, default=2, help="simulations per pairing")
-    ap.add_argument("--search-worlds", type=int, default=1,
+    ap.add_argument("--search-opp-br", type=int, default=0,
+                    help="best-response width: let the equilibrium minimize over this many legal opponent "
+                         "candidates (0 = use --search-opp-k). Fixes the opp-k prune that drops low-prior counters.")
+    ap.add_argument("--search-seeds", type=int, default=16, help="simulations per pairing")
+    ap.add_argument("--search-worlds", type=int, default=16,
                     help="closed team sheets: score each play against this many guesses at the opponent's "
                          "hidden sets (common sets that fit what they've shown), weighted by how likely each is")
-    ap.add_argument("--search-prior", type=float, default=0.0, help="weight on the policy's log-probability")
+    ap.add_argument("--search-prior", type=float, default=0.1, help="weight on the policy's log-probability")
+    ap.add_argument("--search-ensure-switches", action=argparse.BooleanOptionalAction, default=True,
+                    help="ensure all legal bench switches are included in opponent search candidates (default: True)")
+    ap.add_argument("--double-oracle", action=argparse.BooleanOptionalAction, default=True,
+                    help="search: use Double Oracle Nash equilibrium solver instead of expected value (default: True)")
     ap.add_argument("--speed-inference", action="store_true",
                     help="narrow opposing Speed stats from turn order into the features (ai_vgc.speed); "
                          "for models trained with it (rl.py --speed-inference)")
@@ -1119,10 +1372,14 @@ def main() -> None:
     ap.add_argument("--opponent-repeat", type=float, nargs=2, metavar=("AFTER_LOSS", "AFTER_WIN"),
                     help="Bo3: an nn: opponent replays its last preview with these probabilities "
                          "(human-like: 0.24 0.49)")
+    ap.add_argument("--opponent-search", action="store_true",
+                    help="the opponent also picks move-turn actions by search")
     ap.add_argument("--opponent-adapt", action="store_true",
                     help="Bo3: an nn: opponent counter-picks our previous game's leads (the Adapter, assuming "
                          "we repeat them), as a human who has seen game 1 would")
     ap.add_argument("--opponent-teams", type=Path, default=None, help="team folder for the opponent (default: --teams)")
+    ap.add_argument("--opponent-cycle", action="store_true",
+                    help="evaluate against opponent team files in sorted order, covering each once per cycle")
     ap.add_argument("--only", nargs="+", default=None, metavar="TEAM",
                     help="draw each match's team at random from just these --teams files (stems)")
     ap.add_argument("--no-timer", action="store_true",
@@ -1141,7 +1398,22 @@ def main() -> None:
                     help="team folder search and --adapt read EV spreads from (default: --teams). Use the full "
                          "pool when --teams is small, or opponents' spreads fall back to 0 EVs")
     args = ap.parse_args()
+    if args.search_preset == "mikumiku":
+        args.search = args.double_oracle = True
+        args.search_backend = "vgc-engine"
+        for name, value in dict(search_worlds=16, search_k=8, search_opp_k=8, search_seeds=16,
+                                search_depth=1, search_prior=0.1, search_solver="regret",
+                                search_worst_case_weight=0.5).items():
+            flag = "--" + name.replace("_", "-")
+            if not any(a == flag or a.startswith(flag + "=") for a in sys.argv[1:]):
+                setattr(args, name, value)
+    if not 0 <= args.search_worst_case_weight <= 1 or args.search_regret_iterations < 1:
+        ap.error("invalid search blend or regret iteration count")
     torch.set_num_threads(1)
+    if args.search_backend in ("vgc-engine", "rust"):
+        args.search_backend = "vgc-engine"
+        if args.search_worlds == 1 and "--search-worlds" not in sys.argv:
+            args.search_worlds = 64
     if args.search_team_mass is not None:
         from ai_vgc.nn import search as _search
 
@@ -1168,6 +1440,7 @@ def main() -> None:
         ping_interval=20.0, ping_timeout=60.0,
         battle_format=args.format, max_concurrent_battles=args.concurrency,
         accept_open_team_sheet=not args.closed_sheets,
+        start_listening=not public,
         server_configuration=ShowdownServerConfiguration if public else ServerConfiguration(
             f"ws://localhost:{args.port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?"),
     )
@@ -1197,8 +1470,13 @@ def main() -> None:
                                             seeds2=args.search_seeds2, prior=args.search_prior,
                                             procs=args.search_procs, refine=args.search_refine,
                                             refine_seeds=args.search_refine_seeds,
-                                            chance_branching=args.search_chance_branching,
-                                            lanes=args.search_lanes, backend=args.search_backend, **kw)
+                                            chance_branching=args.search_chance_branching, opp_br=args.search_opp_br,
+                                            lanes=args.search_lanes, backend=args.search_backend,
+                                            double_oracle=args.double_oracle,
+                                            solver=args.search_solver, worst_case_weight=args.search_worst_case_weight,
+                                            regret_iterations=args.search_regret_iterations, value_device=args.search_value_device,
+                                            closed_sheets=args.closed_sheets,
+                                            ensure_switches=args.search_ensure_switches, **kw)
                 bot.formats = formats
                 bot.counter_t1 = args.counter_t1
                 if public and not args.no_munchstats:
@@ -1210,10 +1488,18 @@ def main() -> None:
             if public:
                 _public_login(bot, password)
             bot.vary, bot.vary_k, bot.vary_margin = args.vary, args.vary_k, args.vary_margin
-            bot.speed_inference = args.speed_inference
-            bot.damage_inference = args.damage_inference
-            bot.set_guess = (str(args.sets or args.teams or TEAMS_DIR), formats[0]) if args.set_guess else None
+            configure_inference(bot, args.sets or args.teams or TEAMS_DIR, formats[0],
+                                speed=args.speed_inference, damage=args.damage_inference,
+                                guesses=args.set_guess)
             bot.change_after_loss = args.change_after_loss
+            bot.no_series = args.no_series
+            if args.adapt:
+                from ai_vgc.nn.bo3 import Adapter
+                from ai_vgc.teams import TEAMS_DIR
+
+                bot.adapter = Adapter(formats[0], args.sets or args.teams or TEAMS_DIR,
+                                      args.showdown or ("pokemon-showdown-mc" if "regmc" in formats[0] else "pokemon-showdown"),
+                                      args.adapt_k, args.adapt_prior, getattr(bot, "bridge", None))
             bot.save_dir = args.save_dir / time.strftime("%Y-%m-%d")
             bot.logs_dir = args.logs_dir
             bot.watch_url = "https://play.pokemonshowdown.com/" if public else f"http://localhost:{args.port}/"
@@ -1230,6 +1516,10 @@ def main() -> None:
                         sock = getattr(bot.ps_client, "websocket", None)
                         if sock is not None and getattr(sock.state, "name", "") == "CLOSED":
                             print("connection to Showdown lost: exiting to reconnect", flush=True)
+                            try:
+                                bot.record_interruption("Showdown connection lost")
+                            except Exception as error:
+                                print(f"could not record interrupted battle: {error!r}", flush=True)
                             os._exit(75)
 
                 threading.Thread(target=watchdog, daemon=True).start()
@@ -1287,16 +1577,20 @@ def main() -> None:
                               seeds2=args.search_seeds2, prior=args.search_prior,
                               procs=args.search_procs, refine=args.search_refine,
                               refine_seeds=args.search_refine_seeds,
-                              chance_branching=args.search_chance_branching,
-                              lanes=args.search_lanes, backend=args.search_backend, **kw)
+                              chance_branching=args.search_chance_branching, opp_br=args.search_opp_br,
+                              lanes=args.search_lanes, backend=args.search_backend,
+                              double_oracle=args.double_oracle, closed_sheets=args.closed_sheets,
+                              solver=args.search_solver, worst_case_weight=args.search_worst_case_weight,
+                              regret_iterations=args.search_regret_iterations, value_device=args.search_value_device,
+                              ensure_switches=args.search_ensure_switches, **kw)
             me.counter_t1 = args.counter_t1
         else:
             me = NNPlayer(args.model, args.rating, args.greedy, rules=not args.no_rules,
                           account_configuration=account("nn"), team=teams(), **common)
         me.vary, me.vary_k, me.vary_margin = args.vary, args.vary_k, args.vary_margin
-        me.speed_inference = args.speed_inference
-        me.damage_inference = args.damage_inference
-        me.set_guess = (str(args.sets or args.teams or TEAMS_DIR), args.format) if args.set_guess else None
+        configure_inference(me, args.sets or args.teams or TEAMS_DIR, args.format,
+                            speed=args.speed_inference, damage=args.damage_inference,
+                            guesses=args.set_guess)
         me.change_after_loss = args.change_after_loss
         me.no_series = args.no_series
         if args.adapt:
@@ -1322,11 +1616,28 @@ def main() -> None:
                   f"95% CI [{lo:.1%}, {hi:.1%}]  {time.time() - t:.0f}s")
             return
         if args.opponent.startswith("nn:"):
-            opp_team = RandomPoolTeambuilder(args.opponent_teams) if args.opponent_teams else teams()
-            opp = NNPlayer(args.opponent[3:], args.opponent_rating or args.rating, args.greedy,
-                           rules=not args.opponent_no_rules,
-                           account_configuration=account("nnopp"),
-                           team=opp_team, **common)
+            opp_team = RandomPoolTeambuilder(args.opponent_teams, cycle=args.opponent_cycle) if args.opponent_teams else teams()
+            if args.opponent_search:
+                from ai_vgc.nn.search import SearchPlayer
+                from ai_vgc.teams import TEAMS_DIR
+
+                kw = {k: v for k, v in common.items() if k != "battle_format"}
+                opp = SearchPlayer(args.opponent[3:], args.opponent_rating or args.rating, args.greedy,
+                                   rules=not args.opponent_no_rules,
+                                   account_configuration=account("nnopps"), team=opp_team,
+                                   opp_model=args.opp_model,
+                                   fmt=args.format, teams_dir=args.sets or args.opponent_teams or args.teams or TEAMS_DIR,
+                                   showdown=args.showdown or ("pokemon-showdown-mc" if "regmc" in args.format else "pokemon-showdown"),
+                                   k=args.search_k, opp_k=args.search_opp_k, seeds=args.search_seeds,
+                                   worlds=args.search_worlds, prior=args.search_prior,
+                                   backend="showdown", double_oracle=False, closed_sheets=args.closed_sheets, **kw)
+            else:
+                opp = NNPlayer(args.opponent[3:], args.opponent_rating or args.rating, args.greedy,
+                               rules=not args.opponent_no_rules,
+                               account_configuration=account("nnopp"),
+                               team=opp_team, **common)
+            configure_inference(opp, args.sets or args.opponent_teams or args.teams or TEAMS_DIR,
+                                args.format)
             opp.repeat = tuple(args.opponent_repeat) if args.opponent_repeat else None
             if args.opponent_adapt:
                 from ai_vgc.nn.bo3 import Adapter
@@ -1339,6 +1650,8 @@ def main() -> None:
             opp = SimpleHeuristicsPlayer(account_configuration=account("heur"), team=teams(),
                                          **common)
         t = time.time()
+        me._eval_target_n = args.n
+        me._eval_save_dir = args.save_dir if args.save_battles else None
         asyncio.run(me.battle_against(opp, n_battles=args.n))
         wins, n = me.n_won_battles, me.n_finished_battles
         lo, hi = wilson(wins, n)

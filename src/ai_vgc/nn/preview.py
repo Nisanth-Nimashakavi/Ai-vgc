@@ -43,41 +43,114 @@ from ai_vgc.nn.player import NNPlayer, load_policy
 @torch.no_grad()
 def _slot_logps(model: Policy, battle: DoubleBattle, rating: float) -> tuple[np.ndarray, dict[int, np.ndarray]]:
     """Slot a's log-probs over team members, and slot b's given each slot-a choice."""
+    device = next(model.parameters()).device
     obs = encode(battle, rating)
-    b = {k: torch.from_numpy(np.ascontiguousarray(v))[None] for k, v in obs.items()}
-    m = torch.from_numpy(obs["mask"])
+    b = {k: torch.from_numpy(np.ascontiguousarray(v))[None].to(device) for k, v in obs.items()}
+    m = torch.from_numpy(obs["mask"]).to(device)
     enc = model.encode(b)
-    lp_a = F.log_softmax(masked(model.slot_logits(enc, b, 0), m[None, 0]), -1)[0].numpy()
+    lp_a = F.log_softmax(masked(model.slot_logits(enc, b, 0), m[None, 0]), -1)[0].cpu().numpy()
     lp_b = {}
     for a0 in np.flatnonzero(obs["mask"][0]):
-        prev = torch.tensor([a0])
+        prev = torch.tensor([a0], device=device)
         lp_b[a0] = F.log_softmax(masked(model.slot_logits(enc, b, 1, prev), slot_b_mask(m[None, 1], prev)),
-                                 -1)[0].numpy()
+                                 -1)[0].cpu().numpy()
     return lp_a, lp_b
 
 
+@torch.no_grad()
 def preview_candidates(model: Policy, battle: DoubleBattle, rating: float) -> list[tuple[str, float]]:
     """Every preview ("1234": ordered leads, then the back two) with the policy's log-prob,
     most likely first."""
     team = list(battle.team.values())
+    n_team = len(team)
+    if n_team < 4:
+        return [("".join(str(i) for i in range(1, n_team + 1)), 0.0)]
+
     for mon in team:
         mon._selected_in_teampreview = False
-    lp_a, lp_b = _slot_logps(model, battle, rating)
+
+    device = next(model.parameters()).device
+    obs0 = encode(battle, rating)
+    b0 = {k: torch.from_numpy(np.ascontiguousarray(v))[None].to(device) for k, v in obs0.items()}
+    m0 = torch.from_numpy(obs0["mask"]).to(device)
+    enc0 = model.encode(b0)
+    lp_a = F.log_softmax(masked(model.slot_logits(enc0, b0, 0), m0[None, 0]), -1)[0].cpu().numpy()
+
+    # Slot b lead given each slot a choice
+    lp_b = {}
+    for a0 in np.flatnonzero(obs0["mask"][0]):
+        prev = torch.tensor([a0], device=device)
+        lp_b[a0] = F.log_softmax(masked(model.slot_logits(enc0, b0, 1, prev), slot_b_mask(m0[None, 1], prev)), -1)[0].cpu().numpy()
+
+    pairs = list(itertools.permutations(range(1, n_team + 1), 2))
+    N_pairs = len(pairs)
+
+    # Batch all lead pairs for back evaluation in a single forward pass
+    b_batch = {k: v.repeat(N_pairs, *[1] * (v.ndim - 1)) for k, v in b0.items()}
+    m_batch = m0.repeat(N_pairs, 1, 1).clone()
+
+    for idx, (i, j) in enumerate(pairs):
+        b_batch["tok_num"][idx, i - 1, 76] = 1.0
+        b_batch["tok_num"][idx, j - 1, 76] = 1.0
+        m_batch[idx, :, i] = False
+        m_batch[idx, :, j] = False
+
+    enc_batch = model.encode(b_batch)
+    back_a_all = F.log_softmax(masked(model.slot_logits(enc_batch, b_batch, 0), m_batch[:, 0]), -1).cpu().numpy()
+
     out = []
-    for i, j in itertools.permutations(range(1, 7), 2):
+    for idx, (i, j) in enumerate(pairs):
         lead = lp_a[i] + lp_b[i][j]
-        for mon in team:
-            mon._selected_in_teampreview = False
-        team[i - 1]._selected_in_teampreview = team[j - 1]._selected_in_teampreview = True
-        back_a, back_b = _slot_logps(model, battle, rating)
-        rest = [k for k in range(1, 7) if k not in (i, j)]
+        rest = [k for k in range(1, n_team + 1) if k not in (i, j)]
+        enc_i = (enc_batch[0][idx : idx + 1], enc_batch[1][idx : idx + 1], enc_batch[2][idx : idx + 1])
+        b_i = {k: v[idx : idx + 1] for k, v in b_batch.items()}
+        m_i = m_batch[idx : idx + 1]
+
+        lp_b_dict = {}
+        for k in rest:
+            prev = torch.tensor([k], device=device)
+            lp_b_dict[k] = F.log_softmax(masked(model.slot_logits(enc_i, b_i, 1, prev), slot_b_mask(m_i[:, 1], prev)), -1)[0].cpu().numpy()
+
         for k, l in itertools.combinations(rest, 2):
-            # The back pair is unordered: add up both orders.
-            back = np.logaddexp(back_a[k] + back_b[k][l], back_a[l] + back_b[l][k])
+            back = np.logaddexp(back_a_all[idx, k] + lp_b_dict[k][l], back_a_all[idx, l] + lp_b_dict[l][k])
             out.append((f"{i}{j}{k}{l}", float(lead + back)))
+
     for mon in team:
         mon._selected_in_teampreview = False
+
     return sorted(out, key=lambda c: -c[1])
+
+
+def group_preview_candidates(
+    cands: list[tuple[str, float]], n_mons: int = 6
+) -> list[tuple[tuple[int, ...], float, str, list[tuple[str, float]]]]:
+    """Group candidate preview orders into unique C(N, 4) groups (15 groups for 6 mons).
+
+    Returns a sorted list of tuples:
+        (group_tuple, group_logp, best_order, orders_in_group)
+    where group_logp is the logsumexp of policy probabilities across the valid lead/back orders
+    in that 4-mon composition.
+    """
+    if n_mons < 4:
+        return []
+    groups = list(itertools.combinations(range(1, n_mons + 1), 4))
+    group_orders: dict[tuple[int, ...], list[tuple[str, float]]] = {g: [] for g in groups}
+
+    for order, lp in cands:
+        g = tuple(sorted(int(x) for x in order))
+        if g in group_orders:
+            group_orders[g].append((order, lp))
+
+    out = []
+    for g, orders in group_orders.items():
+        if not orders:
+            continue
+        lps = np.array([lp for _, lp in orders], dtype=np.float64)
+        group_logp = float(np.logaddexp.reduce(lps))
+        best_order = max(orders, key=lambda x: x[1])[0]
+        out.append((g, group_logp, best_order, orders))
+
+    return sorted(out, key=lambda x: -x[1])
 
 
 class PreviewPlayer(NNPlayer):

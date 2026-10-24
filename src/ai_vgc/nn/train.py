@@ -24,6 +24,9 @@ Options for the retrain (docs/training-ideas.md, ideas 2, 4 and 5):
                        active did that turn: move slot or switch, and target)
     --aux-mt           with --aux-coef: predict the target per move (Protect and an attack get
                        their own targets) rather than one target per Pokemon
+    --mutate           enable Nessie-style mutation augmentation: randomize species, ability,
+                       item, moves, stats, types, nature, EVs, IVs with configurable probabilities
+                       (half of training games mutated, forces learning mechanics not matchups)
 
 Games are split by id: 5% held out for validation. The checkpoint with the
 lowest validation policy loss is saved to --out.
@@ -44,6 +47,7 @@ import torch.nn.functional as F
 from ai_vgc.nn.encode import N_ACT, N_DMG, move_table, vocab_sizes
 from ai_vgc.nn.model import Policy, masked, slot_b_mask
 from ai_vgc.nn.tb import scalars, writer
+from ai_vgc.nn.mutation import MutationConfig, apply_mutations_to_batch, create_mutation_config_from_args
 
 DATA = Path("data/nn")
 OUT = Path("data/models/all-bo3-bc-new.pt")
@@ -151,7 +155,7 @@ def weights(rating: torch.Tensor, won: torch.Tensor, center: float, scale: float
     return w * torch.where(won, 1.0, loss_weight)
 
 
-def step(model: Policy, b: dict[str, torch.Tensor], aux: bool = False):
+def step(model: Policy, b: dict[str, torch.Tensor], aux: bool = False, aux_extended: bool = False):
     """Per-sample losses and predictions for one batch (plus the aux loss when `aux`)."""
     act = b["action"].long()
     mask_a, mask_b = b["mask"][:, 0], slot_b_mask(b["mask"][:, 1], act[:, 0])
@@ -169,26 +173,40 @@ def step(model: Policy, b: dict[str, torch.Tensor], aux: bool = False):
     valid = act >= 0
     bce = F.binary_cross_entropy_with_logits(v, b["won"].float(), reduction="none")
     hits = torch.stack([la.argmax(1) == act[:, 0], lb.argmax(1) == act[:, 1]], 1) & valid
-    if not aux:
+    if not aux and not aux_extended:
         return ce, valid, bce, hits, v
-    om, ot = model.opp_logits(enc, b)
-    opp = b["opp"].long()
-    # Targets of the move actually used (switches have target -1 and are ignored).
-    ot = ot.gather(2, opp[..., 0].clamp(0, 3)[..., None, None].expand(-1, -1, 1, 3))[:, :, 0]
-    aux_ce = F.cross_entropy(om.flatten(0, 1), opp[..., 0].flatten(), ignore_index=-1, reduction="sum") + \
-        F.cross_entropy(ot.flatten(0, 1), opp[..., 1].flatten(), ignore_index=-1, reduction="sum")
-    aux_hit = ((om.argmax(-1) == opp[..., 0]) & (opp[..., 0] >= 0)).sum()
-    return ce, valid, bce, hits, v, aux_ce, aux_hit, (opp[..., 0] >= 0).sum()
+    aux_ce = torch.tensor(0.0, device=act.device)
+    aux_hit = torch.tensor(0, device=act.device)
+    aux_n = torch.tensor(0, device=act.device)
+    if aux:
+        om, ot = model.opp_logits(enc, b)
+        opp = b["opp"].long()
+        # Targets of the move actually used (switches have target -1 and are ignored).
+        ot = ot.gather(2, opp[..., 0].clamp(0, 3)[..., None, None].expand(-1, -1, 1, 3))[:, :, 0]
+        aux_ce = F.cross_entropy(om.flatten(0, 1), opp[..., 0].flatten(), ignore_index=-1, reduction="sum") + \
+            F.cross_entropy(ot.flatten(0, 1), opp[..., 1].flatten(), ignore_index=-1, reduction="sum")
+        aux_hit = ((om.argmax(-1) == opp[..., 0]) & (opp[..., 0] >= 0)).sum()
+        aux_n = (opp[..., 0] >= 0).sum()
+    aux_extended_ce = torch.tensor(0.0, device=act.device)
+    if aux_extended:
+        # Extended aux heads: future weather, terrain, damage, survival, game length, entropy collapse
+        # Labels not yet in dataset; placeholder for when they are added
+        ext_logits = model.extended_aux_logits(enc, b)
+        # For now, return 0 loss; labels would need to be added to dataset
+        # Example structure when labels exist:
+        # aux_extended_ce = F.cross_entropy(ext_logits["future_weather"], b["future_weather"], reduction="sum") + ...
+        pass
+    return ce, valid, bce, hits, v, aux_ce, aux_hit, aux_n, aux_extended_ce
 
 
-def evaluate(model: Policy, data, idx: torch.Tensor, dev, batch: int, amp, aux: bool = False) -> dict[str, float]:
+def evaluate(model: Policy, data, idx: torch.Tensor, dev, batch: int, amp, aux: bool = False, aux_extended: bool = False) -> dict[str, float]:
     model.eval()
     tot = {"ce": 0.0, "n": 0, "hit": 0, "pv_hit": 0, "pv_n": 0, "bce": 0.0, "v_hit": 0, "g": 0,
            "aux_hit": 0, "aux_n": 0}
     with torch.no_grad(), amp():
         for i in range(0, len(idx), batch):
             b = {k: t[idx[i:i + batch]].to(dev, non_blocking=True) for k, t in data.items()}
-            ce, valid, bce, hits, v, *extra = step(model, b, aux)
+            ce, valid, bce, hits, v, *extra = step(model, b, aux, aux_extended)
             if extra:
                 tot["aux_hit"] += extra[1].item()
                 tot["aux_n"] += extra[2].item()
@@ -243,8 +261,27 @@ def main() -> None:
     ap.add_argument("--init", default=None,
                     help="start from this checkpoint (its architecture; --series layers start at zero)")
     ap.add_argument("--aux-coef", type=float, default=0.0, help="weight of the opponent-action head's loss (0 = no head)")
+    ap.add_argument("--aux-extended", action="store_true", help="enable extended aux heads (weather, terrain, damage, survival, game length, entropy)")
+    ap.add_argument("--aux-extended-coef", type=float, default=0.0, help="weight of extended aux heads loss")
+    # Mutation augmentation (Nessie-style)
+    ap.add_argument("--mutate", action="store_true", help="enable mutation augmentation")
+    ap.add_argument("--mut-game-prob", type=float, default=0.5, help="probability a game is mutated")
+    ap.add_argument("--mut-species", type=float, default=0.1, help="probability to mutate species")
+    ap.add_argument("--mut-ability", type=float, default=0.15, help="probability to mutate ability")
+    ap.add_argument("--mut-item", type=float, default=0.1, help="probability to mutate item")
+    ap.add_argument("--mut-moves", type=float, default=0.2, help="probability to mutate moves")
+    ap.add_argument("--mut-stats", type=float, default=0.1, help="probability to perturb base stats")
+    ap.add_argument("--mut-types", type=float, default=0.05, help="probability to mutate types")
+    ap.add_argument("--mut-nature", type=float, default=0.1, help="probability to mutate nature")
+    ap.add_argument("--mut-evs", type=float, default=0.15, help="probability to mutate EVs")
+    ap.add_argument("--mut-ivs", type=float, default=0.05, help="probability to mutate IVs")
+    ap.add_argument("--mut-stat-noise", type=float, default=0.1, help="Gaussian noise std on base stats (relative)")
+    ap.add_argument("--mut-ev-noise", type=float, default=20.0, help="Gaussian noise std on EVs")
+    ap.add_argument("--mut-max-per-pokemon", type=int, default=3, help="max mutations per Pokemon")
+    ap.add_argument("--observation-contract", default="native-cts-v3", help="observation contract metadata (e.g. native-cts-v3)")
     args = ap.parse_args()
     aux = args.aux_coef > 0
+    aux_extended = args.aux_extended_coef > 0
 
     torch.manual_seed(args.seed)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -278,15 +315,19 @@ def main() -> None:
         cfg = ckpt["config"] | {"series": args.series or ckpt["config"].get("series", False)}
         if aux and not cfg.get("aux"):
             raise SystemExit(f"--aux-coef needs an opponent head, and {args.init} has none")
-        model = Policy(ckpt["sizes"], move_table(), **cfg)
+        # Allow adding extended aux heads to a checkpoint that doesn't have them
+        # They will be initialized from scratch (zero-initialized like series layers)
+        model = Policy(ckpt["sizes"], move_table(), **cfg, aux_extended=aux_extended)
         missing, unexpected = model.load_state_dict(ckpt["state"], strict=False)
-        assert not unexpected and all(k.startswith("ser_") for k in missing), (missing, unexpected)
+        assert not unexpected and all(k.startswith("ser_") or k.startswith("future_") or k.startswith("damage_") or k.startswith("survival_") or k.startswith("game_length") or k.startswith("entropy_") for k in missing), (missing, unexpected)
         model = model.to(dev)
         print(f"initialised from {args.init}; new: {sorted({k.split('.')[0] for k in missing}) or 'none'}",
               flush=True)
     else:
         model = Policy(vocab_sizes(), move_table(), args.d, args.layers, args.heads, args.dropout,
-                       n_dmg=N_DMG, aux=aux, aux_mt=aux and args.aux_mt, series=args.series).to(dev)
+                       n_dmg=N_DMG, aux=aux, aux_mt=aux and args.aux_mt,
+                       aux_extended=aux_extended, series=args.series).to(dev)
+    model.observation_contract = args.observation_contract
     print(f"{sum(p.numel() for p in model.parameters()) / 1e6:.2f}M parameters", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     steps = args.epochs * math.ceil(len(tr_idx) / args.batch)
@@ -301,17 +342,23 @@ def main() -> None:
         t = time.time()
         perm = tr_idx[torch.randperm(len(tr_idx), device=tr_idx.device)]
         run_loss = run_n = 0.0
+        mut_config = create_mutation_config_from_args(args) if args.mutate else None
         for i in range(0, len(perm), args.batch):
             b = {k: v[perm[i:i + args.batch]].to(dev, non_blocking=True) for k, v in data.items()}
             if args.aug:
                 b = augment(b)
+            if args.mutate:
+                b = apply_mutations_to_batch(b, mut_config)
             with amp():
-                ce, valid, bce, _, _, *extra = step(model, b, aux)
+                ce, valid, bce, _, _, *extra = step(model, b, aux, aux_extended)
             w = b["w"]
             pol = (ce * w[:, None] * valid).sum() / (w[:, None] * valid).sum().clamp(min=1e-6)
             loss = pol + args.value_coef * (bce * w).sum() / w.sum()
             if extra:
                 loss = loss + args.aux_coef * extra[0] / extra[2].clamp(min=1)
+            if aux_extended and len(extra) > 3:
+                denom = max(len(b["action"]) * 6, 1)
+                loss = loss + args.aux_extended_coef * extra[3] / denom
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -319,11 +366,12 @@ def main() -> None:
             sched.step()
             run_loss += pol.item()
             run_n += 1
-        m = evaluate(model, {k: v for k, v in data.items() if k != "w"}, va_idx, dev, args.batch * 2, amp, aux)
+        m = evaluate(model, {k: v for k, v in data.items() if k != "w"}, va_idx, dev, args.batch * 2, amp, aux, aux_extended)
         saved = ""
         if m["loss"] < best:
             best = m["loss"]
             torch.save({"state": model.state_dict(), "config": model.config, "sizes": vocab_sizes(),
+                        "observation_contract": args.observation_contract,
                         "args": vars(args) | {"data": str(args.data), "out": str(args.out)},
                         "val": m, "epoch": epoch}, args.out)
             saved = " (saved)"
