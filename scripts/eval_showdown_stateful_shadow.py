@@ -1172,16 +1172,18 @@ class StatefulShadow19Player(Player):
         side = 0 if battle.player_role == "p1" else 1
         tracker = self.belief_bank.tracker() if self.belief_bank else None
 
+        t_us = getattr(self.team, "last_team_json", None) or self.t_us
+
         if self.dynamic_builder is not None:
             opp_species = list(battle.teampreview_opponent_team) if battle.teampreview_opponent_team else []
             t_them = self.dynamic_builder.build_team(opp_species)
-            pool = create_dynamic_preview_pool(self.t_us, t_them)
+            pool = create_dynamic_preview_pool(t_us, t_them)
             print(f"[Preview] Dynamically reconstructed opponent team: {[m['species'] for m in t_them]}", flush=True)
         else:
             t_them = self.t_them
-            pool = self.pool
+            pool = create_dynamic_preview_pool(t_us, t_them) if getattr(self.team, "last_team_json", None) else self.pool
 
-        mgr = ShadowBattleManager(pool, self.t_us, t_them, side, self.sets_dir, tracker)
+        mgr = ShadowBattleManager(pool, t_us, t_them, side, self.sets_dir, tracker)
         self.shadow_managers[battle.battle_tag] = mgr
 
         cat, num, moves = pool.observations([0], [1])
@@ -1237,14 +1239,15 @@ class StatefulShadow19Player(Player):
             mgr = self.shadow_managers.get(battle.battle_tag)
             if mgr is None:
                 tracker = self.belief_bank.tracker() if self.belief_bank else None
+                t_us = getattr(self.team, "last_team_json", None) or self.t_us
                 if self.dynamic_builder is not None:
                     opp_species = list(battle.opponent_team.values()) if battle.opponent_team else []
                     t_them = self.dynamic_builder.build_team(opp_species)
-                    pool = create_dynamic_preview_pool(self.t_us, t_them)
+                    pool = create_dynamic_preview_pool(t_us, t_them)
                 else:
                     t_them = self.t_them
-                    pool = self.pool
-                mgr = ShadowBattleManager(pool, self.t_us, t_them, side, self.sets_dir, tracker)
+                    pool = create_dynamic_preview_pool(t_us, t_them) if getattr(self.team, "last_team_json", None) else self.pool
+                mgr = ShadowBattleManager(pool, t_us, t_them, side, self.sets_dir, tracker)
                 mgr.set_picks([0, 1, 2, 3])
                 self.shadow_managers[battle.battle_tag] = mgr
 
@@ -1492,7 +1495,7 @@ async def run_benchmark(
     search_k2: int = 2,
     search_m2: int = 2,
     search_blend: float = 0.8,
-    model_path: str = "runs/model19-batched-20M/data/models/model19_batched/model19_sp_160169k.pt",
+    model_path: str = "data/models/model19_best_1054m_ema.pt",
     v7f_rules: bool = False,
     dynamic_opp: bool = False,
     opp_team: str = "MC378",
@@ -1522,25 +1525,33 @@ async def run_benchmark(
     config = ServerConfiguration(f"ws://localhost:{port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?")
     fmt = "gen9championsvgc2026regmc"
 
-    my_team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
-    if not my_team_file.exists():
-        if (Path(pool_dir) / f"{my_team}.txt").exists():
-            my_team_file = Path(pool_dir) / f"{my_team}.txt"
-        else:
-            raise FileNotFoundError(f"My team file not found: {my_team_file}")
-    paste = my_team_file.read_text("utf-8")
-    parsed = Teambuilder.parse_showdown_team(paste)
-    team_json = [{
-        "species": m.species or m.nickname,
-        "level": 50,
-        "ability": m.ability or "",
-        "item": m.item or "",
-        "nature": m.nature or "Serious",
-        "moves": m.moves,
-        "evs": m.evs or {},
-        "ivs": m.ivs or {},
-    } for m in parsed]
-    pool = TeamPreviewPool([team_json, team_json])
+    is_pool_us = my_team.lower() in ("pool", "all", "field")
+    if is_pool_us:
+        tb_us = RandomPoolTeambuilder(Path(pool_dir), cycle=True)
+        team_json = tb_us._team_jsons[0]
+        pool = TeamPreviewPool([team_json, team_json])
+        my_team_file = Path(pool_dir) / f"{tb_us._names[0]}.txt"
+    else:
+        my_team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
+        if not my_team_file.exists():
+            if (Path(pool_dir) / f"{my_team}.txt").exists():
+                my_team_file = Path(pool_dir) / f"{my_team}.txt"
+            else:
+                raise FileNotFoundError(f"My team file not found: {my_team_file}")
+        paste = my_team_file.read_text("utf-8")
+        parsed = Teambuilder.parse_showdown_team(paste)
+        team_json = [{
+            "species": m.species or m.nickname,
+            "level": 50,
+            "ability": m.ability or "",
+            "item": m.item or "",
+            "nature": m.nature or "Serious",
+            "moves": m.moves,
+            "evs": m.evs or {},
+            "ivs": m.ivs or {},
+        } for m in parsed]
+        pool = TeamPreviewPool([team_json, team_json])
+        tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc") if Path("data/teams/reg_mc").exists() else Path(pool_dir), names=[my_team_file.stem])
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device in (None, "auto") else torch.device(device)
     print(f"Device:      {dev}")
@@ -1565,7 +1576,6 @@ async def run_benchmark(
                 opp_model_path = "data/models/mc-cts-rnad-v6.pt"
     print(f"Loading opponent Policy from: {opp_model_path} (team: {opp_team})...")
     m_v7f = load_policy(opp_model_path, str(dev)).eval()
-    tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc") if Path("data/teams/reg_mc").exists() else Path(pool_dir), names=[my_team_file.stem])
     if is_pool_opp:
         tb_opp = RandomPoolTeambuilder(Path(pool_dir), cycle=True)
         dynamic_opp = True
@@ -1721,7 +1731,7 @@ if __name__ == "__main__":
     parser.add_argument("--search-k2", type=int, default=2, help="Turn 2 candidate actions for our side")
     parser.add_argument("--search-m2", type=int, default=2, help="Turn 2 candidate actions for opponent")
     parser.add_argument("--search-blend", type=float, default=0.8, help="Blend weight for search equilibrium vs net prior")
-    parser.add_argument("--model-path", type=str, default="runs/model19-batched-20M/data/models/model19_batched/model19_sp_160169k.pt", help="Path to Model 19 checkpoint")
+    parser.add_argument("--model-path", type=str, default="data/models/model19_best_1054m_ema.pt", help="Path to Model 19 checkpoint")
     parser.add_argument("--v7f-rules", action="store_true", help="Enable rule heuristics on v7f opponent (default False for pure policy parity)")
     parser.add_argument("--dynamic-opp", action="store_true", help="Dynamically reconstruct opponent team from Showdown Team Preview species")
     parser.add_argument("--my-team", type=str, default="MC378", help="Candidate team name in data/teams/reg_mc (default: MC378)")

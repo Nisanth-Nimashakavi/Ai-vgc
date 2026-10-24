@@ -94,10 +94,13 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
     echo "  (High-Speed Full Chance Search enabled: K=$SEARCH_K, M=$SEARCH_M, fast-path active)"
   fi
 
+  MY_TEAM="${MY_TEAM:-MC378}"
+  echo "  (Piloting team: $MY_TEAM)"
+
   "$UV_BIN" run python scripts/eval_showdown_stateful_shadow.py \
     --games "$GAMES" \
     --model-path "$MODEL_19" \
-    --my-team "MC378" \
+    --my-team "$MY_TEAM" \
     --opp-team "pool" \
     --pool-dir "$POOL" \
     --opp-model "$MODEL_V6" \

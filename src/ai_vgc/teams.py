@@ -19,6 +19,7 @@ class RandomPoolTeambuilder(Teambuilder):
         paths = [teams_dir / f"{t}.txt" for t in names] if names else sorted(teams_dir.glob("*.txt"))
         self._names = []
         self._teams = []
+        self._team_jsons = []
         for p in paths:
             try:
                 raw_text = p.read_text("utf-8")
@@ -36,12 +37,24 @@ class RandomPoolTeambuilder(Teambuilder):
                 if len(parsed) == 6:
                     self._teams.append(self.join_team(parsed))
                     self._names.append(p.stem)
+                    self._team_jsons.append([{
+                        "species": m.species or m.nickname,
+                        "level": 50,
+                        "ability": m.ability or "",
+                        "item": m.item or "",
+                        "nature": m.nature or "Serious",
+                        "moves": m.moves,
+                        "evs": m.evs or {},
+                        "ivs": m.ivs or {},
+                    } for m in parsed])
             except Exception:
                 continue
         if not self._teams:
             raise FileNotFoundError(f"no valid teams in {teams_dir}")
         self._next = 0 if cycle else None
         self._announce = bool(names)  # the ladder bot's --only / --cycle: say which team each match gets
+        self.last_name = None
+        self.last_team_json = None
 
     def yield_team(self) -> str:
         if self._next is None:
@@ -49,6 +62,7 @@ class RandomPoolTeambuilder(Teambuilder):
         else:
             i, self._next = self._next, (self._next + 1) % len(self._teams)
         self.last_name = self._names[i]
+        self.last_team_json = self._team_jsons[i]
         if self._announce:
             print(f"team: {self._names[i]}", flush=True)
         return self._teams[i]
