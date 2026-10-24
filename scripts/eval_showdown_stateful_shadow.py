@@ -777,7 +777,7 @@ def search_turn_19(
         ola = opp_out_a["policy_a"][0].clone()
         ola[~opp_m0] = -1e9
         ola = ola.log_softmax(-1)
-        num_oa = min(3, max(1, int(opp_m0.sum().item())))
+        num_oa = min(4, max(1, int(opp_m0.sum().item())))
         top_oa = ola.topk(num_oa).indices.tolist()
 
         opp_cands = []
@@ -789,7 +789,7 @@ def search_turn_19(
                 omb[18] = True
             olb[~omb] = -1e9
             olb = olb.log_softmax(-1)
-            num_ob = min(3, max(1, int(omb.sum().item())))
+            num_ob = min(4, max(1, int(omb.sum().item())))
             top_ob = olb.topk(num_ob).indices.tolist()
             for ob in top_ob:
                 opp_cands.append(((oa, ob), (ola[oa] + olb[ob]).item()))
