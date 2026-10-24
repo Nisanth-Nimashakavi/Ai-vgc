@@ -55,7 +55,9 @@ async def run_gauntlet(
     config = ServerConfiguration(f"ws://localhost:{port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?")
     fmt = "gen9championsvgc2026regmc"
 
-    team_file = Path(pool_dir) / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
+    team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
+    if not team_file.exists():
+        team_file = Path(pool_dir) / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
     if not team_file.exists():
         raise FileNotFoundError(f"Team file not found: {team_file}")
     paste_cand = team_file.read_text("utf-8")
