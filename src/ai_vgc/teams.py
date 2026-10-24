@@ -17,10 +17,29 @@ class RandomPoolTeambuilder(Teambuilder):
         `cycle`: hand them out in turn, one per match (a Bo3 series asks once), not at random."""
         self._rng = random.Random(seed)
         paths = [teams_dir / f"{t}.txt" for t in names] if names else sorted(teams_dir.glob("*.txt"))
-        self._names = [p.stem for p in paths]
-        self._teams = [self.join_team(self.parse_showdown_team(p.read_text())) for p in paths]
+        self._names = []
+        self._teams = []
+        for p in paths:
+            try:
+                raw_text = p.read_text("utf-8")
+                # Normalize gendered species and forms to canonical Showdown notation
+                raw_text = (raw_text
+                            .replace("Indeedee ♀", "Indeedee (Indeedee-F) (F)")
+                            .replace("Indeedee-Female", "Indeedee (Indeedee-F) (F)")
+                            .replace("Meowstic ♀", "Meowstic (Meowstic-F) (F)")
+                            .replace("Meowstic-Female", "Meowstic (Meowstic-F) (F)")
+                            .replace("Basculegion ♀", "Basculegion (Basculegion-F) (F)")
+                            .replace("Basculegion-Female", "Basculegion (Basculegion-F) (F)")
+                            .replace("eternalflowerfloette", "Floette (Floette-Eternal)")
+                            .replace("Floette-Eternal-Flower", "Floette (Floette-Eternal)"))
+                parsed = self.parse_showdown_team(raw_text)
+                if len(parsed) == 6:
+                    self._teams.append(self.join_team(parsed))
+                    self._names.append(p.stem)
+            except Exception:
+                continue
         if not self._teams:
-            raise FileNotFoundError(f"no teams in {teams_dir}")
+            raise FileNotFoundError(f"no valid teams in {teams_dir}")
         self._next = 0 if cycle else None
         self._announce = bool(names)  # the ladder bot's --only / --cycle: say which team each match gets
 

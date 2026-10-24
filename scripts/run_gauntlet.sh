@@ -9,11 +9,25 @@
 #   GAMES=50 bash scripts/run_gauntlet.sh    # Fast test with 50 games
 
 set -e
-cd ~/ai-vgc
+if [[ -d "$HOME/projects/ai-vgc" ]]; then
+  cd "$HOME/projects/ai-vgc"
+elif [[ -d "$HOME/ai-vgc" ]]; then
+  cd "$HOME/ai-vgc"
+fi
 
 GAMES="${GAMES:-500}"
 TARGET="${1:-both}"
 POOL="${POOL:-data/teams/reg_mc}"
+
+# Canonicalize pool_5600 teams if requested to eliminate scraped formatting issues
+if [[ "$POOL" == *"pool_5600"* ]]; then
+  CLEAN_POOL="data/teams/pool_5600/holdout_clean"
+  if [[ ! -d "$CLEAN_POOL" || -z "$(ls -A "$CLEAN_POOL" 2>/dev/null)" ]]; then
+    echo "Canonicalizing pool_5600 holdout teams via Showdown validator..."
+    node scripts/validate_tournament_teams.cjs data/teams/pool_5600/holdout "$CLEAN_POOL"
+  fi
+  POOL="$CLEAN_POOL"
+fi
 
 # Locate Model 19 Checkpoint
 MODEL_19="data/models/model19_best_1054m_ema.pt"
@@ -52,11 +66,13 @@ echo "Format:                gen9championsvgc2026regmc (CTS Bo1)"
 echo "Target:                $TARGET"
 echo "======================================================================"
 
+UV_BIN="$(command -v uv || echo "$HOME/.local/bin/uv")"
+
 # 1. Run v7f Specialist Gauntlet
 if [[ "$TARGET" == "v7f" || "$TARGET" == "both" ]]; then
   echo ""
   echo ">>> [1/2] Benchmarking Specialist (v7f-MC378) against the Pool ($POOL)..."
-  ~/.local/bin/uv run python scripts/eval_showdown_gauntlet_v7f.py \
+  "$UV_BIN" run python scripts/eval_showdown_gauntlet_v7f.py \
     --games "$GAMES" \
     --model "$MODEL_V7F" \
     --opp-model "$MODEL_V6" \
@@ -75,7 +91,7 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
     echo "  (Chance-branching search enabled: K=20, M=40)"
   fi
 
-  ~/.local/bin/uv run python scripts/eval_showdown_stateful_shadow.py \
+  "$UV_BIN" run python scripts/eval_showdown_stateful_shadow.py \
     --games "$GAMES" \
     --model-path "$MODEL_19" \
     --my-team "MC378" \
