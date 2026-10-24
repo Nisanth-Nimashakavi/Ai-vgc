@@ -1467,6 +1467,7 @@ async def run_benchmark(
     dynamic_opp: bool = False,
     opp_team: str = "MC378",
     my_team: str = "MC378",
+    pool_dir: str = "data/teams/reg_mc",
     opp_model: str | None = None,
     belief_priors: str | None = None,
 ):
@@ -1492,7 +1493,10 @@ async def run_benchmark(
 
     my_team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
     if not my_team_file.exists():
-        raise FileNotFoundError(f"My team file not found: {my_team_file}")
+        if (Path(pool_dir) / f"{my_team}.txt").exists():
+            my_team_file = Path(pool_dir) / f"{my_team}.txt"
+        else:
+            raise FileNotFoundError(f"My team file not found: {my_team_file}")
     paste = my_team_file.read_text("utf-8")
     parsed = Teambuilder.parse_showdown_team(paste)
     team_json = [{
@@ -1529,12 +1533,12 @@ async def run_benchmark(
                 opp_model_path = "data/models/mc-cts-rnad-v6.pt"
     print(f"Loading opponent Policy from: {opp_model_path} (team: {opp_team})...")
     m_v7f = load_policy(opp_model_path, "cpu").eval()
-    tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=[my_team_file.stem])
+    tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc") if Path("data/teams/reg_mc").exists() else Path(pool_dir), names=[my_team_file.stem])
     if is_pool_opp:
-        tb_opp = RandomPoolTeambuilder(Path("data/teams/reg_mc"), cycle=True)
+        tb_opp = RandomPoolTeambuilder(Path(pool_dir), cycle=True)
         dynamic_opp = True
     else:
-        tb_opp = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=[opp_team])
+        tb_opp = RandomPoolTeambuilder(Path(pool_dir), names=[opp_team])
 
     shared_oracle_picks = {}
     n_p1 = (games + 1) // 2
@@ -1690,6 +1694,7 @@ if __name__ == "__main__":
     parser.add_argument("--dynamic-opp", action="store_true", help="Dynamically reconstruct opponent team from Showdown Team Preview species")
     parser.add_argument("--my-team", type=str, default="MC378", help="Candidate team name in data/teams/reg_mc (default: MC378)")
     parser.add_argument("--opp-team", type=str, default="MC378", help="Opponent team name in data/teams/reg_mc (e.g. MC378, MC301, pool)")
+    parser.add_argument("--pool-dir", type=str, default="data/teams/reg_mc", help="Opponent team pool directory (default: data/teams/reg_mc)")
     parser.add_argument("--opp-model", type=str, default=None, help="Explicit path to opponent model (e.g. data/models/mc-cts-rnad-v6.pt)")
     parser.add_argument("--belief-priors", type=str, default="data/public-priors.json", help="Path to public priors JSON")
     args = parser.parse_args()
@@ -1708,6 +1713,7 @@ if __name__ == "__main__":
         dynamic_opp=args.dynamic_opp,
         opp_team=args.opp_team,
         my_team=args.my_team,
+        pool_dir=args.pool_dir,
         opp_model=args.opp_model,
         belief_priors=args.belief_priors,
     ))

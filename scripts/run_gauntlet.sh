@@ -13,6 +13,7 @@ cd ~/ai-vgc
 
 GAMES="${GAMES:-500}"
 TARGET="${1:-both}"
+POOL="${POOL:-data/teams/reg_mc}"
 
 # Locate Model 19 Checkpoint
 MODEL_19="data/models/model19_best_1054m_ema.pt"
@@ -46,7 +47,7 @@ echo "THE GAUNTLET BENCHMARK: 500-TEAM POOL vs v6 GENERALIST"
 echo "======================================================================"
 echo "Total Games per Model: $GAMES (side-balanced: half P1, half P2)"
 echo "Opponent Policy:       $MODEL_V6"
-echo "Team Pool:             data/teams/reg_mc (564 tournament teams)"
+echo "Team Pool:             $POOL"
 echo "Format:                gen9championsvgc2026regmc (CTS Bo1)"
 echo "Target:                $TARGET"
 echo "======================================================================"
@@ -54,19 +55,20 @@ echo "======================================================================"
 # 1. Run v7f Specialist Gauntlet
 if [[ "$TARGET" == "v7f" || "$TARGET" == "both" ]]; then
   echo ""
-  echo ">>> [1/2] Benchmarking Specialist (v7f-MC378) against the Pool..."
+  echo ">>> [1/2] Benchmarking Specialist (v7f-MC378) against the Pool ($POOL)..."
   ~/.local/bin/uv run python scripts/eval_showdown_gauntlet_v7f.py \
     --games "$GAMES" \
     --model "$MODEL_V7F" \
     --opp-model "$MODEL_V6" \
     --team "MC378" \
+    --pool "$POOL" \
     --concurrency 4
 fi
 
 # 2. Run Model 19 Generalist Gauntlet
 if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
   echo ""
-  echo ">>> [2/2] Benchmarking Generalist (Model 19) against the Pool..."
+  echo ">>> [2/2] Benchmarking Generalist (Model 19) against the Pool ($POOL)..."
   EXTRA_FLAGS=()
   if [[ "${SEARCH:-0}" == "1" ]]; then
     EXTRA_FLAGS+=(--search --depth 1 --search-k 20 --search-m 40 --search-k2 2 --search-m2 2)
@@ -78,6 +80,7 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
     --model-path "$MODEL_19" \
     --my-team "MC378" \
     --opp-team "pool" \
+    --pool-dir "$POOL" \
     --opp-model "$MODEL_V6" \
     --belief-priors "$PRIORS" \
     "${EXTRA_FLAGS[@]}"
