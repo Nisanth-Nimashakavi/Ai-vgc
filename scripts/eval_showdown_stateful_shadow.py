@@ -1466,17 +1466,19 @@ async def run_benchmark(
     v7f_rules: bool = False,
     dynamic_opp: bool = False,
     opp_team: str = "MC378",
+    my_team: str = "MC378",
     opp_model: str | None = None,
     belief_priors: str | None = None,
 ):
     port = find_free_port()
     print("=" * 70)
-    print(f"STATEFUL SHADOW BENCHMARK: MODEL 19 vs {opp_team} (oracle={oracle}, search={search}, depth={depth}, v7f_rules={v7f_rules}, dynamic_opp={dynamic_opp})")
+    print(f"STATEFUL SHADOW BENCHMARK: MODEL 19 ({my_team}) vs {opp_team} (oracle={oracle}, search={search}, depth={depth}, v7f_rules={v7f_rules}, dynamic_opp={dynamic_opp})")
     print("=" * 70)
     print(f"Port:        {port}")
     print(f"Games:       {games} (half P1, half P2)")
     print(f"Oracle mode: {oracle}")
     print(f"Dynamic Opp: {dynamic_opp}")
+    print(f"My Team:     {my_team}")
     print(f"Opp Team:    {opp_team}")
     print(f"Search:      {search} (depth={depth}, k={search_k}, m={search_m}, k2={search_k2}, m2={search_m2}, blend={search_blend})")
     print(f"Model 19:    {model_path}")
@@ -1488,7 +1490,10 @@ async def run_benchmark(
     config = ServerConfiguration(f"ws://localhost:{port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?")
     fmt = "gen9championsvgc2026regmc"
 
-    paste = Path("data/teams/reg_mc/MC378.txt").read_text("utf-8")
+    my_team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
+    if not my_team_file.exists():
+        raise FileNotFoundError(f"My team file not found: {my_team_file}")
+    paste = my_team_file.read_text("utf-8")
     parsed = Teambuilder.parse_showdown_team(paste)
     team_json = [{
         "species": m.species or m.nickname,
@@ -1510,18 +1515,26 @@ async def run_benchmark(
     m19.load_state_dict({k.removeprefix("module."): v for k, v in ckpt_19["model_state_dict"].items()})
     m19.eval()
 
+    is_pool_opp = opp_team.lower() in ("pool", "all", "field")
     if opp_model:
         opp_model_path = opp_model
     else:
-        opp_model_path = f"data/models/mc-cts-rnad-v8f-{opp_team}.pt"
-        if not Path(opp_model_path).exists():
-            opp_model_path = f"data/models/mc-cts-rnad-v7f-{opp_team}.pt"
-        if not Path(opp_model_path).exists():
+        if is_pool_opp:
             opp_model_path = "data/models/mc-cts-rnad-v6.pt"
+        else:
+            opp_model_path = f"data/models/mc-cts-rnad-v8f-{opp_team}.pt"
+            if not Path(opp_model_path).exists():
+                opp_model_path = f"data/models/mc-cts-rnad-v7f-{opp_team}.pt"
+            if not Path(opp_model_path).exists():
+                opp_model_path = "data/models/mc-cts-rnad-v6.pt"
     print(f"Loading opponent Policy from: {opp_model_path} (team: {opp_team})...")
     m_v7f = load_policy(opp_model_path, "cpu").eval()
-    tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=["MC378"])
-    tb_opp = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=[opp_team])
+    tb_us = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=[my_team_file.stem])
+    if is_pool_opp:
+        tb_opp = RandomPoolTeambuilder(Path("data/teams/reg_mc"), cycle=True)
+        dynamic_opp = True
+    else:
+        tb_opp = RandomPoolTeambuilder(Path("data/teams/reg_mc"), names=[opp_team])
 
     shared_oracle_picks = {}
     n_p1 = (games + 1) // 2
@@ -1621,8 +1634,9 @@ async def run_benchmark(
         "search_blend": search_blend,
         "v7f_rules": v7f_rules,
         "model_19": model_path,
-        "opponent": "data/models/mc-cts-rnad-v7f-MC378.pt",
-        "team": "data/teams/reg_mc/MC378.txt",
+        "opponent": opp_model_path,
+        "team": str(my_team_file),
+        "opp_team": opp_team,
         "priors": "runs/model19-beliefs-20261016/data/munchstats-priors.json",
         "phase1_model19_p1": {
             "wins": w1,
@@ -1674,7 +1688,8 @@ if __name__ == "__main__":
     parser.add_argument("--model-path", type=str, default="runs/model19-batched-20M/data/models/model19_batched/model19_sp_160169k.pt", help="Path to Model 19 checkpoint")
     parser.add_argument("--v7f-rules", action="store_true", help="Enable rule heuristics on v7f opponent (default False for pure policy parity)")
     parser.add_argument("--dynamic-opp", action="store_true", help="Dynamically reconstruct opponent team from Showdown Team Preview species")
-    parser.add_argument("--opp-team", type=str, default="MC378", help="Opponent team name in data/teams/reg_mc (e.g. MC378, MC301, MC41)")
+    parser.add_argument("--my-team", type=str, default="MC378", help="Candidate team name in data/teams/reg_mc (default: MC378)")
+    parser.add_argument("--opp-team", type=str, default="MC378", help="Opponent team name in data/teams/reg_mc (e.g. MC378, MC301, pool)")
     parser.add_argument("--opp-model", type=str, default=None, help="Explicit path to opponent model (e.g. data/models/mc-cts-rnad-v6.pt)")
     parser.add_argument("--belief-priors", type=str, default="data/public-priors.json", help="Path to public priors JSON")
     args = parser.parse_args()
@@ -1692,6 +1707,7 @@ if __name__ == "__main__":
         v7f_rules=args.v7f_rules,
         dynamic_opp=args.dynamic_opp,
         opp_team=args.opp_team,
+        my_team=args.my_team,
         opp_model=args.opp_model,
         belief_priors=args.belief_priors,
     ))
