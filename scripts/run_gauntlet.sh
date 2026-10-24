@@ -88,10 +88,10 @@ if [[ "$TARGET" == "model19" || "$TARGET" == "both" ]]; then
   echo ">>> [2/2] Benchmarking Generalist (Model 19) against the Pool ($POOL)..."
   EXTRA_FLAGS=()
   if [[ "${SEARCH:-0}" == "1" ]]; then
-    SEARCH_K="${SEARCH_K:-8}"
-    SEARCH_M="${SEARCH_M:-12}"
+    SEARCH_K="${SEARCH_K:-20}"
+    SEARCH_M="${SEARCH_M:-40}"
     EXTRA_FLAGS+=(--search --depth 1 --search-k "$SEARCH_K" --search-m "$SEARCH_M" --search-k2 2 --search-m2 2)
-    echo "  (High-Speed Chance Search enabled: K=$SEARCH_K, M=$SEARCH_M, fast-path active)"
+    echo "  (High-Speed Full Chance Search enabled: K=$SEARCH_K, M=$SEARCH_M, fast-path active)"
   fi
 
   "$UV_BIN" run python scripts/eval_showdown_stateful_shadow.py \

@@ -18,8 +18,7 @@ def search_node_inputs(native, side, context, device):
     mask_closed_observation(cat, num)
     facts = np.frombuffer(native.public_history_18(), "<u4").reshape(2, 1, 2, 6, 20).copy()
     if context.get('root_facts') is not None:
-        facts = merge_branch_public_facts(facts, context['root_facts'], context['root_side'],
-                                         json.loads(native.to_json()))
+        facts = merge_branch_public_facts(facts, context['root_facts'], context['root_side'], None)
     sides = np.array([side], dtype=np.int64)
     apply_known_active_sets(cat, facts, sides)
     memory = known_history(context["pool"], context["full_teams"],

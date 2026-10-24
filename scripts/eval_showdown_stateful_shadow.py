@@ -777,19 +777,27 @@ def search_turn_19(
         ola = opp_out_a["policy_a"][0].clone()
         ola[~opp_m0] = -1e9
         ola = ola.log_softmax(-1)
-        num_oa = min(4, max(1, int(opp_m0.sum().item())))
+        num_oa = min(7, max(1, int(opp_m0.sum().item())))
         top_oa = ola.topk(num_oa).indices.tolist()
 
+        # Vectorized batch evaluation across all slot-A opponent candidates
+        oa_tensor = torch.tensor(top_oa, device=device)
+        B_oa = len(top_oa)
+        c_opp_exp = c_opp.expand(B_oa, -1, -1)
+        n_opp_exp = n_opp.expand(B_oa, -1, -1)
+        opp_hist_exp = {k: v.expand(B_oa, -1, -1) if v.dim() == 3 else v.expand(B_oa, -1) for k, v in opp_history.items()}
+        opp_out_b = model(c_opp_exp, n_opp_exp, action_a=oa_tensor, **opp_hist_exp)
+        olb_all = opp_out_b["policy_b"].clone()
+
         opp_cands = []
-        for oa in top_oa:
-            opp_out_b = model(c_opp, n_opp, action_a=torch.tensor([oa], device=device), **opp_history)
-            olb = opp_out_b["policy_b"][0].clone()
+        for i_oa, oa in enumerate(top_oa):
+            olb = olb_all[i_oa]
             omb = conditioned_b_mask(opp_m1.unsqueeze(0), torch.tensor([oa], device=device))[0]
             if omb.sum() == 0:
                 omb[18] = True
             olb[~omb] = -1e9
             olb = olb.log_softmax(-1)
-            num_ob = min(4, max(1, int(omb.sum().item())))
+            num_ob = min(7, max(1, int(omb.sum().item())))
             top_ob = olb.topk(num_ob).indices.tolist()
             for ob in top_ob:
                 opp_cands.append(((oa, ob), (ola[oa] + olb[ob]).item()))
@@ -818,20 +826,28 @@ def search_turn_19(
                 return (top_a_idx, top_b_idx), 0.0
 
         la = la.log_softmax(-1)
-        num_a = min(4, max(1, int(m0.sum().item())))
+        num_a = min(5, max(1, int(m0.sum().item())))
         top_a = la.topk(num_a).indices.tolist()
+
+        # Vectorized batch evaluation across all slot-A our candidates
+        a0_tensor = torch.tensor(top_a, device=device)
+        B_a = len(top_a)
+        c_exp = c.expand(B_a, -1, -1)
+        n_exp = n.expand(B_a, -1, -1)
+        hist_exp = {k: v.expand(B_a, -1, -1) if v.dim() == 3 else v.expand(B_a, -1) for k, v in history.items()}
+        out_b = model(c_exp, n_exp, action_a=a0_tensor, **hist_exp)
+        lb_all = out_b["policy_b"].clone()
 
         valid_set = set(valid_pairs)
         our_cands = []
-        for a0 in top_a:
-            out_b = model(c, n, action_a=torch.tensor([a0], device=device), **history)
-            lb = out_b["policy_b"][0].clone()
+        for i_a, a0 in enumerate(top_a):
+            lb = lb_all[i_a]
             mb = conditioned_b_mask(m1.unsqueeze(0), torch.tensor([a0], device=device))[0]
             if mb.sum() == 0:
                 mb[18] = True
             lb[~mb] = -1e9
             lb = lb.log_softmax(-1)
-            num_b = min(4, max(1, int(mb.sum().item())))
+            num_b = min(5, max(1, int(mb.sum().item())))
             top_b = lb.topk(num_b).indices.tolist()
             for b0 in top_b:
                 if (a0, b0) in valid_set:
@@ -1108,7 +1124,7 @@ class StatefulShadow19Player(Player):
                  dynamic_opp: bool = False, dynamic_builder: DynamicOpponentBuilder | None = None,
                  priors_path: str | None = None, device: str = "cpu",
                  oracle_preview: bool = False, oracle_picks: dict[str, list[int]] | None = None,
-                 use_search: bool = False, search_depth: int = 2, search_k: int = 6, search_m: int = 6,
+                 use_search: bool = False, search_depth: int = 2, search_k: int = 20, search_m: int = 40,
                  search_k2: int = 2, search_m2: int = 2, search_blend: float = 0.8,
                  search_beta: float = 15.0, search_gamma: float = 0.91, deterministic: bool = False,
                  rules: bool = True,
@@ -1471,8 +1487,8 @@ async def run_benchmark(
     oracle: bool = False,
     search: bool = False,
     depth: int = 2,
-    search_k: int = 6,
-    search_m: int = 6,
+    search_k: int = 20,
+    search_m: int = 40,
     search_k2: int = 2,
     search_m2: int = 2,
     search_blend: float = 0.8,
@@ -1700,8 +1716,8 @@ if __name__ == "__main__":
     parser.add_argument("--oracle", action="store_true", help="Initialize shadow battle with opponent true brought Pokémon (native benchmark parity mode)")
     parser.add_argument("--search", action="store_true", help="Enable simultaneous-move search with Regret Matching")
     parser.add_argument("--depth", type=int, default=2, help="Search depth: 1 (1-turn) or 2 (2-turn lookahead)")
-    parser.add_argument("--search-k", type=int, default=6, help="Turn 1 candidate actions for our side")
-    parser.add_argument("--search-m", type=int, default=6, help="Turn 1 candidate actions for opponent")
+    parser.add_argument("--search-k", type=int, default=20, help="Turn 1 candidate actions for our side")
+    parser.add_argument("--search-m", type=int, default=40, help="Turn 1 candidate actions for opponent")
     parser.add_argument("--search-k2", type=int, default=2, help="Turn 2 candidate actions for our side")
     parser.add_argument("--search-m2", type=int, default=2, help="Turn 2 candidate actions for opponent")
     parser.add_argument("--search-blend", type=float, default=0.8, help="Blend weight for search equilibrium vs net prior")
