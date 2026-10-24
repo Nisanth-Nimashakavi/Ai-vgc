@@ -21,8 +21,10 @@ Each decision:
    pairing, so luck mostly cancels out between them) and returns the turn's log as our client
    would see it. The log is parsed into a copy of the live battle, which is encoded and scored
    by the value head exactly as in real play, so M[i, j] = our mean win chance.
-4. We pick the row with the best expected value against the opponent's distribution,
-   plus `prior` times the policy's log-probability to break near-ties toward the policy.
+4. We solve the matrix game M using Double Oracle to get equilibrium strategies for both
+   players (Nessie-style), instead of just best-responding to the opponent's fixed distribution.
+   This eliminates exploitability in simultaneous-move situations (team preview, leads).
+   The policy's log-probability is added as a prior to break near-ties toward the policy.
 
 Search only runs on ordinary move turns; forced switches and team preview use the policy.
 """
@@ -37,6 +39,7 @@ import select
 import subprocess
 import threading
 import time
+from itertools import combinations
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
@@ -64,8 +67,14 @@ from poke_env.teambuilder import Teambuilder
 from ai_vgc import munchstats
 from ai_vgc.nn.encode import encode
 from ai_vgc.nn.model import Policy, masked, slot_b_mask
-from ai_vgc.nn.player import NNPlayer, action_mask, load_policy
+from ai_vgc.nn.player import NNPlayer, action_mask, load_policy, safe_action_to_order
 from ai_vgc.nn.rules import apply_rules
+from ai_vgc.nn.double_oracle import equilibrium_strategy_from_search
+from ai_vgc.nn.vgc_bridge import VGCBridge
+from ai_vgc.nn.chance_branching import (
+    enumerate_damage_rolls, enumerate_crit, enumerate_secondary_effects,
+    enumerate_accuracy, enumerate_protect, ChanceOutcome
+)
 
 BRIDGE = Path(__file__).with_name("sim_bridge.js")
 STATS = ["hp", "atk", "def", "spa", "spd", "spe"]
@@ -204,18 +213,21 @@ def weighted_sets(base: str, teams_dir: str, fmt: str = "", rounds: int = 20) ->
             want = target[v] if v in target else (rest * share / other if other else 0)
             w[st] *= want / share if share else 0
 
+    blend = dict(w)  # the logged+MunchStats mixture, before marginal fitting
     for _ in range(rounds):
         if items:
             fit(items, lambda st: st[0])
         if abilities:
             fit(abilities, lambda st: st[1])
-        for m, p in list(moves.items())[:8]:  # a move's share = sets that carry it
+        for m, p in list(moves.items()):  # a move's share = sets that carry it
             mass = sum(w.values())
             cur = sum(n for st, n in w.items() if m in st[2]) / mass
             if 0 < cur < 1:
                 for st in w:
                     w[st] *= p / cur if m in st[2] else (1 - p) / (1 - cur)
     out = Counter({st: n for st, n in w.items() if n > 1e-6})
+    if not out:  # iterative fitting underflowed every set; keep the unfitted blend
+        out = Counter({st: n for st, n in blend.items() if n > 1e-6})
     _WEIGHTED[key] = out
     return out
 
@@ -253,14 +265,16 @@ def spread_prior(base: str, top: int = 12) -> list[tuple[tuple[tuple[int, ...], 
 def munch_sets(base: str, top: int = 24) -> Counter:
     """Sets built from MunchStats' separate move, item and ability usage, for a species no team
     or log shows whole: the likeliest items and abilities with the four likeliest moves, or one of
-    those swapped for the next ones. Weights are products of the usages."""
+    those swapped for any lower-ranked move the site lists. Weights are products of the usages.
+    Every move MunchStats reports (its top ~10) can therefore land in some set; otherwise moves
+    ranked past the swap window are unrepresentable in any sampled world no matter the width."""
     entry = _munch().get(base)
     if not entry or not entry.get("moves"):
         return Counter()
     moves = [(to_id_str(m), p / 100) for m, p in entry["moves"]]
     items = [(to_id_str(i), p) for i, p in entry.get("items", [])[:4]] or [("", 1.0)]
     abilities = [(to_id_str(a), p) for a, p in entry.get("abilities", [])[:2]] or [("", 1.0)]
-    core, extra = moves[:4], moves[4:7]
+    core, extra = moves[:4], moves[4:]
     movesets = [(frozenset(m for m, _ in core), float(np.prod([p for _, p in core])))]
     for i in range(len(core)):
         for m, p in extra:
@@ -324,7 +338,14 @@ def team_library(teams_dir: str, fmt: str = "") -> dict[frozenset, list[tuple[di
     return index
 
 
-def team_worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+def search_opponent_roster(battle: DoubleBattle) -> list[Pokemon]:
+    """Merge public preview species with subsequently revealed live objects."""
+    team = list(battle.opponent_team.values())
+    seen_species = {_core(_species(m)) for m in team}
+    return team + [m for m in battle.teampreview_opponent_team if _core(_species(m)) not in seen_species]
+
+
+def team_worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "", include_preview=False) -> list[tuple[dict, float]]:
     """Guesses at the opponent's hidden sets from whole known teams: teams with the same six
     species as their team preview (or five of the six, at a quarter of the weight) whose sets
     agree with everything revealed so far (moves, item, ability). Each guess is {name: (item,
@@ -335,7 +356,7 @@ def team_worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> 
         return []
     lib = team_library(teams_dir, fmt)
     revealed = {}
-    for mon in battle.opponent_team.values():
+    for mon in search_opponent_roster(battle) if include_preview else battle.opponent_team.values():
         species = _species(mon)
         abilities = _pokedex()[species]["abilities"]
         ability = to_id_str(abilities["0"]) if len(abilities) == 1 else mon.ability or ""
@@ -371,30 +392,52 @@ def team_worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> 
     return out
 
 
-def worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+def worlds(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "", *, include_preview=False, rng=None) -> list[tuple[dict, float]]:
     """Up to `n` guesses at the opponent's hidden sets, {name: (item, ability, moves, spread)},
     each with its probability (the product over their Pokemon, renormalised over the ones kept).
     Sets come from `set_posterior`; spreads (stat points and nature, which no team sheet shows)
     from `spread_prior`, or None to use the team pool's. The most likely of both for every
     Pokemon comes first; the rest are sampled. When whole known teams match their team preview
     (`team_worlds`), those guesses take `TEAM_MASS` of the probability."""
-    known = team_worlds(battle, teams_dir, n, fmt) if TEAM_MASS else []
+    known = team_worlds(battle, teams_dir, n, fmt, include_preview) if TEAM_MASS else []
     if known:
         mass, kt = TEAM_MASS, sum(p for _, p in known)
-        rest = worlds_by_species(battle, teams_dir, max(1, n - len(known)), fmt)
+        rest = worlds_by_species(battle, teams_dir, max(1, n - len(known)), fmt, include_preview)
         # Pokemon a team guess doesn't cover (5-of-6 matches) take the species guess's set.
         filler = rest[0][0]
         merged = [({**filler, **w}, mass * p / kt) for w, p in known] + [(w, (1 - mass) * p) for w, p in rest]
         merged = sorted(merged, key=lambda c: -c[1])[:n]
         total = sum(p for _, p in merged)
-        return [(w, p / total) for w, p in merged]
-    return worlds_by_species(battle, teams_dir, n, fmt)
+        sampled = [(w, p / total) for w, p in merged]
+    else:
+        sampled = worlds_by_species(battle, teams_dir, n, fmt, include_preview)
+    return bring_four_worlds(battle, sampled, n, rng) if include_preview else sampled
 
 
-def worlds_by_species(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "") -> list[tuple[dict, float]]:
+def bring_four_worlds(battle, sampled, n, rng=None):
+    """Sample the hidden bring-four too, always retaining revealed Pokémon.
+
+    No bring-selection model is available: use a uniform prior over legal unseen
+    subsets. Monte Carlo samples have equal weight (not posterior weight twice).
+    """
+    roster = search_opponent_roster(battle)
+    seen = [_core(_species(m)) for m in roster if m.revealed or m.active or m.fainted]
+    unseen = [_core(_species(m)) for m in roster if _core(_species(m)) not in seen]
+    subsets = list(combinations(unseen, min(len(unseen), max(0, 4-len(seen)))))
+    if len(subsets) == 1:
+        return [(dict(w, __bring__=seen + list(subsets[0])), p) for w, p in sampled]
+    rng = rng if rng is not None else np.random.default_rng()
+    probs = np.asarray([p for _, p in sampled], dtype=float)
+    probs /= probs.sum()
+    return [(dict(sampled[int(rng.choice(len(sampled), p=probs))][0],
+                  __bring__=seen + list(subsets[int(rng.integers(len(subsets)))])), 1/n)
+            for _ in range(n)]
+
+
+def worlds_by_species(battle: DoubleBattle, teams_dir: str, n: int, fmt: str = "", include_preview=False) -> list[tuple[dict, float]]:
     """`worlds` from each Pokemon's own set posterior (no team-level match)."""
     post = {}
-    for mon in battle.opponent_team.values():
+    for mon in search_opponent_roster(battle) if include_preview else battle.opponent_team.values():
         species = _species(mon)
         abilities = _pokedex()[species]["abilities"]
         ability = to_id_str(abilities["0"]) if len(abilities) == 1 else mon.ability or ""
@@ -473,6 +516,14 @@ def _mon_state(mon: Pokemon, ours: bool, teams_dir: str, world: dict | None = No
          "status": mon.status.name.lower() if mon.status and not mon.fainted else "",
          "statusTurns": mon.status_counter,
          "volatiles": [v for e, v in VOLATILES.items() if e in mon.effects]}
+    # UNKNOWN_ITEM is different from None/empty: the latter is publicly gone.
+    s["itemKnown"] = mon.item != "unknown_item"
+    s["item"] = _item(mon) if s["itemKnown"] else s["set"].get("item", "")
+    s["volatileElapsed"] = {v: int(mon.effects[e]) for e, v in VOLATILES.items() if e in mon.effects}
+    s["pp"] = {mid: int(move.current_pp) for mid, move in mon.moves.items()}
+    s["lastMove"] = mon.last_move.id if mon.last_move else None
+    s["mustRecharge"] = mon.must_recharge
+    s["chargingMove"] = mon.preparing_move.id if mon.preparing_move else None
     if ours:
         s["hp"], s["maxhp"] = mon.current_hp, mon.max_hp
         s["stats"] = {k: v for k, v in (mon.stats or {}).items() if v}
@@ -486,6 +537,9 @@ def _side(battle: DoubleBattle, ours: bool, teams_dir: str, world: dict | None =
     """The side's brought Pokemon, actives first in slot order. None when a slot can't be
     filled (it is empty and nothing has fainted to stand in for it)."""
     team = battle.team if ours else battle.opponent_team
+    if not ours and world is not None and "__bring__" in world:
+        team = {m.name: m for m in search_opponent_roster(battle)
+                if _core(_species(m)) in world["__bring__"]}
     active = battle.active_pokemon if ours else battle.opponent_active_pokemon
     # With open team sheets poke-env holds all six opposing Pokemon from the start, so the
     # ones not yet seen fill the opponent's four in team order.
@@ -648,17 +702,37 @@ def after(battle: DoubleBattle, lines: list[str]) -> DoubleBattle:
 def our_candidates(model: Policy, obs: dict[str, np.ndarray], mask: np.ndarray, k: int,
                    ka: int = 4) -> list[tuple[np.ndarray, float]]:
     """The policy's k most likely joint actions (slot a from its top `ka`), with log-probs."""
-    b = {key: torch.from_numpy(np.ascontiguousarray(v))[None] for key, v in obs.items()}
-    m = torch.from_numpy(mask)[None]
+    return our_candidates_batch(model, [obs], [mask], k, ka)[0]
+
+
+@torch.no_grad()
+def our_candidates_batch(model: Policy, obs_list: list[dict[str, np.ndarray]], mask_list: list[np.ndarray],
+                         k: int, ka: int = 4) -> list[list[tuple[np.ndarray, float]]]:
+    """`our_candidates` for N states in one batched encode/slot-0 call instead of N separate ones
+    (the transformer encode is the expensive part; slot b's small head is still run per a0 candidate,
+    exactly as in `our_candidates`, since that's cheap and a0 differs per state)."""
+    n = len(obs_list)
+    if n == 0:
+        return []
+    b = {key: torch.from_numpy(np.stack([np.ascontiguousarray(o[key]) for o in obs_list])) for key in obs_list[0]}
+    m = torch.from_numpy(np.stack(mask_list))
     enc = model.encode(b)
-    lp_a = F.log_softmax(masked(model.slot_logits(enc, b, 0), m[:, 0]), -1)[0]
-    out = []
-    for a0 in lp_a.topk(min(ka, int(mask[0].sum()))).indices.tolist():
-        prev = torch.tensor([a0])
-        lp_b = F.log_softmax(masked(model.slot_logits(enc, b, 1, prev), slot_b_mask(m[:, 1], prev)), -1)[0]
-        for a1 in lp_b.topk(min(k, int(slot_b_mask(m[:, 1], prev).sum()))).indices.tolist():
-            out.append((np.array([a0, a1]), (lp_a[a0] + lp_b[a1]).item()))
-    return sorted(out, key=lambda c: -c[1])[:k]
+    lp_a_all = F.log_softmax(masked(model.slot_logits(enc, b, 0), m[:, 0]), -1)
+    cls, toks, mv = enc
+    out: list[list[tuple[np.ndarray, float]]] = []
+    for i in range(n):
+        enc_i = (cls[i:i + 1], toks[i:i + 1], mv[i:i + 1])
+        b_i = {key: v[i:i + 1] for key, v in b.items()}
+        lp_a = lp_a_all[i]
+        cands = []
+        for a0 in lp_a.topk(min(ka, int(mask_list[i][0].sum()))).indices.tolist():
+            prev = torch.tensor([a0])
+            lp_b = F.log_softmax(masked(model.slot_logits(enc_i, b_i, 1, prev),
+                                        slot_b_mask(m[i:i + 1, 1], prev)), -1)[0]
+            for a1 in lp_b.topk(min(k, int(slot_b_mask(m[i:i + 1, 1], prev).sum()))).indices.tolist():
+                cands.append((np.array([a0, a1]), (lp_a[a0] + lp_b[a1]).item()))
+        out.append(sorted(cands, key=lambda c: -c[1])[:k])
+    return out
 
 
 def _slot_options(battle: DoubleBattle, state: dict, slot: int,
@@ -692,27 +766,50 @@ def _slot_options(battle: DoubleBattle, state: dict, slot: int,
         else:
             out[f"move {mv.id}"] = out.get(f"move {mv.id}", 0) + p_move
     bench = [m["set"]["name"] for m in state["sides"]["them"]["mons"][2:] if not m["fainted"]]
-    if bench and probs is not None:
-        out[f"switch {bench[0]}"] = float(probs[0][4])
+    if bench:
+        # The head predicts switching, not a particular bench destination.
+        # Preserve that total mass while exposing every healthy destination.
+        switch_mass = float(probs[0][4]) if probs is not None else 1.0
+        for name in bench:
+            out[f"switch {name}"] = switch_mass / len(bench)
     total = sum(out.values()) or 1.0
     return [(c, p / total) for c, p in out.items()]
 
 
 @torch.no_grad()
 def opp_candidates(opp_model: Policy | None, battle: DoubleBattle, obs: dict[str, np.ndarray],
-                   state: dict, k: int) -> list[tuple[str, float]]:
+                   state: dict, k: int = 6, *, ensure_switches: bool = True) -> list[tuple[str, float]]:
     """The opponent's k most likely joint choices (in their side's choice syntax), with
-    probabilities renormalised over the k (a random k, equally likely, without the head). A side that can still Mega Evolve does it with the
-    first Pokemon holding its stone, as players nearly always do."""
+    probabilities renormalised over the candidates. Guarantees top-6 minimum and full bench
+    switch recall when ensure_switches is True."""
     probs = [None, None]
     if opp_model is not None and opp_model.config.get("aux"):
         b = {key: torch.from_numpy(np.ascontiguousarray(v))[None] for key, v in obs.items()}
         mv, tg = opp_model.opp_logits(opp_model.encode(b), b)
         mv, tg = F.softmax(mv[0], -1).numpy(), F.softmax(tg[0], -1).numpy()
         probs = [(mv[0], tg[0]), (mv[1], tg[1])]
+    probs = _opp_probs_batch(opp_model, [obs]) if opp_model is not None and opp_model.config.get("aux") else [probs]
+    return _opp_candidates_from_probs(battle, obs, state, k, probs[0], ensure_switches=ensure_switches)
+
+
+def _opp_probs_batch(opp_model: Policy, obs_list: list[dict[str, np.ndarray]]) -> list[list[tuple | None]]:
+    """Batched `opp_model.encode`+`opp_logits` call across N states (the expensive part of
+    `opp_candidates`); returns the same `probs` list each state's candidate construction expects."""
+    b = {key: torch.from_numpy(np.stack([np.ascontiguousarray(o[key]) for o in obs_list])) for key in obs_list[0]}
+    mv, tg = opp_model.opp_logits(opp_model.encode(b), b)
+    mv, tg = F.softmax(mv, -1).numpy(), F.softmax(tg, -1).numpy()
+    return [[(mv[i, 0], tg[i, 0]), (mv[i, 1], tg[i, 1])] for i in range(len(obs_list))]
+
+
+def _opp_candidates_from_probs(battle: DoubleBattle, obs: dict[str, np.ndarray], state: dict, k: int | None,
+                               probs: list[tuple | None], *, mega_slots=None,
+                               ensure_switches: bool = False) -> list[tuple[str, float]]:
+    # None preserves full support for callers that filter legality before top-k.
     per_slot = [_slot_options(battle, state, s, probs[s]) for s in (0, 1)]
     mega = -1
-    if not state["sides"]["them"]["megaUsed"]:
+    if mega_slots is not None:
+        mega = min(mega_slots, default=-1)
+    elif not state["sides"]["them"]["megaUsed"]:
         for s in (0, 1):
             mon = battle.opponent_active_pokemon[s]
             if mon and not mon.fainted and _species(mon) == mon.species and \
@@ -729,9 +826,68 @@ def opp_candidates(opp_model: Policy | None, battle: DoubleBattle, obs: dict[str
         joint.append((f"{ca}, {cb}", pa * pb))
     if probs[0] is None:  # all equally likely: a random k of them
         random.shuffle(joint)
-    joint = sorted(joint, key=lambda c: -c[1])[:k]
+    joint = sorted(joint, key=lambda c: -c[1])
+    if k is not None:
+        target_k = max(6, k) if ensure_switches else k
+        selected = list(joint[:target_k])
+        if ensure_switches:
+            selected_set = {c for c, _ in selected}
+            best_slot0_switches = {}
+            best_slot1_switches = {}
+            best_double_switch = None
+            for c, p in joint:
+                parts = [part.strip() for part in c.split(",")]
+                if len(parts) != 2:
+                    continue
+                is_sw0 = parts[0].startswith("switch ")
+                is_sw1 = parts[1].startswith("switch ")
+                if is_sw0 and is_sw1:
+                    if best_double_switch is None:
+                        best_double_switch = (c, p)
+                elif is_sw0:
+                    tgt = parts[0].removeprefix("switch ")
+                    if tgt not in best_slot0_switches:
+                        best_slot0_switches[tgt] = (c, p)
+                elif is_sw1:
+                    tgt = parts[1].removeprefix("switch ")
+                    if tgt not in best_slot1_switches:
+                        best_slot1_switches[tgt] = (c, p)
+
+            for tgt, (c, p) in best_slot0_switches.items():
+                if not any(t.split(",")[0].strip() == f"switch {tgt}" for t, _ in selected):
+                    if c not in selected_set:
+                        selected.append((c, p))
+                        selected_set.add(c)
+
+            for tgt, (c, p) in best_slot1_switches.items():
+                if not any(len(t.split(",")) > 1 and t.split(",")[1].strip() == f"switch {tgt}" for t, _ in selected):
+                    if c not in selected_set:
+                        selected.append((c, p))
+                        selected_set.add(c)
+
+            if best_double_switch is not None:
+                if not any(len(t.split(",")) == 2 and t.split(",")[0].strip().startswith("switch ") and t.split(",")[1].strip().startswith("switch ") for t, _ in selected):
+                    if best_double_switch[0] not in selected_set:
+                        selected.append(best_double_switch)
+                        selected_set.add(best_double_switch[0])
+        joint = selected
     total = sum(p for _, p in joint) or 1.0
     return [(c, p / total) for c, p in joint]
+
+
+@torch.no_grad()
+def opp_candidates_batch(opp_model: Policy | None, items: list[tuple[DoubleBattle, dict[str, np.ndarray], dict]],
+                         k: int) -> list[list[tuple[str, float]]]:
+    """`opp_candidates` for N (battle, obs, state) tuples, with the opp_model call batched once
+    across all of them instead of once per item."""
+    if not items:
+        return []
+    if opp_model is not None and opp_model.config.get("aux"):
+        probs_list = _opp_probs_batch(opp_model, [obs for _, obs, _ in items])
+    else:
+        probs_list = [[None, None]] * len(items)
+    return [_opp_candidates_from_probs(battle, obs, state, k, probs, ensure_switches=True)
+            for (battle, obs, state), probs in zip(items, probs_list)]
 
 
 @torch.no_grad()
@@ -743,13 +899,19 @@ def values(model: Policy, battles: list[DoubleBattle], rating: float) -> np.ndar
 
 
 def _playout_values(model: Policy, battle: DoubleBattle, res: list[dict], rating: float) -> np.ndarray:
-    """Win probability from our side after each one-turn playout in `res`: 1/0/0.5 for finished games,
-    the value head's after the simulated turn otherwise."""
+    """Win probability after each one-turn playout.
+
+    Showdown results contain protocol ``lines`` and are encoded through poke-env.
+    The vgc-engine backend instead returns a bounded Rust-observation material
+    leaf under ``value`` until its observation-to-network adapter lands.
+    """
     v = np.full(len(res), np.nan)
     live, idx = [], []
     for i, r in enumerate(res):
         if r["winner"]:
             v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
+        elif "value" in r:
+            v[i] = float(r["value"])
         else:
             live.append(after(battle, r["lines"]))
             idx.append(i)
@@ -765,7 +927,8 @@ def _second_turn(model: Policy, opp_model: Policy | None, bridge: Bridge, battle
     policy's `k2` candidates, the opponent mixes over their `opp_k2` likeliest. Playouts that end
     the game, force a switch or failed keep their one-turn value (value head after turn 1)."""
     v = np.full(len(res), np.nan)
-    nodes, conts = [], []
+    pending = []  # (i, b, b2, mask, obs, state)
+    fallback = {}  # i -> b, for items without a usable next-turn position
     for i, r in enumerate(res):
         if r["winner"]:
             v[i] = {"us": 1.0, "them": 0.0}.get(r["winner"], 0.5)
@@ -777,18 +940,33 @@ def _second_turn(model: Policy, opp_model: Policy | None, bridge: Bridge, battle
                 b2.parse_request(r["next"]["request"])
                 mask = apply_rules(b2, action_mask(b2))
                 obs = encode(b2, rating)
-                ours = our_candidates(model, obs | {"mask": mask}, mask, k2)
                 state = position(b2, fmt, teams_dir, world)
-                if ours and state is not None:
-                    choices = [DoublesEnv.action_to_order(a, b2, strict=False).message.removeprefix("/choose ")
-                               for a, _ in ours]
-                    theirs = opp_candidates(opp_model, b2, obs, state, opp_k2)
-                    nodes.append((i, b2, len(choices), [p for _, p in theirs]))
-                    conts.append({"id": r["next"]["id"], "pairs": [(c, t) for c in choices for t, _ in theirs],
-                                  "seeds": seeds2})
+                if state is not None:
+                    pending.append((i, b, b2, mask, obs, state))
                     continue
             except Exception:  # a position poke-env can't take the request for: one-turn value
                 pass
+        fallback[i] = b
+
+    nodes, conts = [], []
+    if pending:
+        ours_batch = our_candidates_batch(model, [obs | {"mask": mask} for _, _, _, mask, obs, _ in pending],
+                                          [mask for _, _, _, mask, _, _ in pending], k2)
+        theirs_batch = opp_candidates_batch(
+            opp_model, [(b2, obs, state) for _, _, b2, _, obs, state in pending], opp_k2)
+    else:
+        ours_batch, theirs_batch = [], []
+    for (i, b, b2, _, _, _), ours, theirs in zip(pending, ours_batch, theirs_batch):
+        if ours:
+            r = res[i]
+            choices = [DoublesEnv.action_to_order(a, b2, strict=False).message.removeprefix("/choose ")
+                       for a, _ in ours]
+            nodes.append((i, b2, len(choices), [p for _, p in theirs]))
+            conts.append({"id": r["next"]["id"], "pairs": [(c, t) for c in choices for t, _ in theirs],
+                          "seeds": seeds2})
+        else:
+            fallback[i] = b
+    for i, b in fallback.items():
         nodes.append((i, b, 0, []))
     _second_turn.expanded += len(conts)
     _second_turn.nodes += len(res)
@@ -802,7 +980,8 @@ def _second_turn(model: Policy, opp_model: Policy | None, bridge: Bridge, battle
             continue
         out = next(outs)
         _second_turn.sims += len(out)
-        _second_turn.errors += sum(bool(r["err"]) for r in out)
+        second_errors = [r["err"] for r in out if r["err"]]
+        _second_turn.errors += len(second_errors)
         vals = np.full(len(out), np.nan)
         for j, r in enumerate(out):
             if r["winner"]:
@@ -834,7 +1013,8 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
            mask: np.ndarray, fmt: str, teams_dir: str, rating: float, k: int = 6, opp_k: int = 6,
            seeds: int = 2, prior: float = 0.0, n_worlds: int = 1, depth: int = 1, k2: int = 3,
            opp_k2: int = 3, seeds2: int = 1, refine: int = 0,
-           refine_seeds: int = 0) -> tuple[np.ndarray, dict] | None:
+           refine_seeds: int = 0, chance_branching: bool = False,
+           double_oracle: bool = False) -> tuple[np.ndarray, dict] | None:
     """(our chosen action, details) by one-turn search, or None when the position can't be
     rebuilt. With closed team sheets the opponent's hidden sets are guessed `n_worlds` ways
     (`worlds`); each candidate is scored in every world and the scores averaged by how likely
@@ -843,7 +1023,13 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
     more times each, in every world, after the first `seeds` pass over all of them.
     With `depth` 2, each turn-1 playout is scored after a second turn (`_second_turn`) instead
     of by the value head right after turn 1.
+    With `chance_branching` True, seed results are weighted by the probability of the chance
+    events (damage rolls, crits, secondary effects) that occurred in each seed, giving a
+    better approximation of true expected value (Nessie-style).
     `M` and `q` in the details are the most likely world's."""
+    import os as _os
+    _dbg = _os.environ.get("NESSIE_SEARCH_TIMING") == "1"
+    _t0 = time.perf_counter() if _dbg else 0.0
     obs = encode(battle, rating)
     ours = our_candidates(model, obs | {"mask": mask}, mask, k)
     if len(ours) < 2:
@@ -851,28 +1037,47 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
     choices = [DoublesEnv.action_to_order(a, battle, strict=False).message.removeprefix("/choose ")
                for a, _ in ours]
     seed_list = [int(s) for s in np.random.randint(1, 2**30, seeds)]
-    value, per_world, errors, sims = np.zeros(len(ours)), [], [], 0
+    # value: per-action values (weighted across worlds), used for refinement ranking
+    value = np.zeros(len(ours))
+    per_world, errors, sims = [], [], 0
     for world, w in worlds(battle, teams_dir, n_worlds, fmt):
+        _t0 = time.perf_counter() if _dbg else 0.0
         state = position(battle, fmt, teams_dir, world)
         if state is None:
             return None
         theirs = opp_candidates(opp_model, battle, obs, state, opp_k)
         pairs = [(c, t) for c in choices for t, _ in theirs]
+        _t1 = time.perf_counter() if _dbg else 0.0
         if depth >= 2:
             seeds2_list = [int(s) for s in np.random.randint(1, 2**30, seeds2)]
             with bridge.lock:  # the kept turn-1 positions must survive until the turn-2 request
                 res = bridge.run(state, pairs, seed_list, keep=True)
+                _t2 = time.perf_counter() if _dbg else 0.0
                 v = _second_turn(model, opp_model, bridge, battle, res, world, fmt, teams_dir, rating,
                                  k2, opp_k2, seeds2_list)
         else:
             res = bridge.run(state, pairs, seed_list)
+            _t2 = time.perf_counter() if _dbg else 0.0
             v = _playout_values(model, battle, res, rating)
+        if _dbg:
+            _t3 = time.perf_counter()
+            print(f"[search-timing] setup={_t1-_t0:.3f}s bridge={_t2-_t1:.3f}s value={_t3-_t2:.3f}s "
+                  f"pairs={len(pairs)} seeds={len(seed_list)}", flush=True)
         M = v.reshape(len(ours), len(theirs), seeds).mean(-1)
         q = np.array([p for _, p in theirs])
-        value += w * (M @ q)
-        errors += [r["err"] for r in res if r["err"]]
+        if double_oracle:
+            eq_strat, eq_value, eq_info = equilibrium_strategy_from_search(
+                M, q, epsilon=1e-3
+            )
+            br_values = M @ q
+            value += w * br_values
+            per_world.append([w, state, theirs, M, q, seeds, eq_strat, eq_info, eq_value])
+        else:
+            value += w * (M @ q)
+            per_world.append([w, state, theirs, M, q, seeds, None, None, None])
+        world_errors = [r["err"] for r in res if r["err"]]
+        errors += world_errors
         sims += len(res)
-        per_world.append([w, state, theirs, M, q, seeds])
     logp = np.array([lp for _, lp in ours])
     if refine and depth < 2 and len(ours) > refine:
         # Stage 2: the candidates still in the running get `refine_seeds` more simulations against
@@ -881,25 +1086,47 @@ def search(model: Policy, opp_model: Policy | None, bridge: Bridge, battle: Doub
         seeds_b = [int(x) for x in np.random.randint(1, 2**30, refine_seeds)]
         value = np.zeros(len(ours))
         for pw in per_world:
-            w, state, theirs, M, q, n = pw
+            w, state, theirs, M, q, n, eq_strat, eq_info, eq_value = pw
             pairs = [(choices[i], t) for i in top for t, _ in theirs]
             res = bridge.run(state, pairs, seeds_b)
             v = _playout_values(model, battle, res, rating)
             extra = v.reshape(len(top), len(theirs), refine_seeds)
             M = M.copy()
             M[top] = (M[top] * n + extra.sum(-1)) / (n + refine_seeds)
+            if double_oracle:
+                eq_strat, eq_value, eq_info = equilibrium_strategy_from_search(M, q, epsilon=1e-3)
+                pw[6] = eq_strat
+                pw[7] = eq_info
+                pw[8] = eq_value
             pw[3] = M
-            errors += [r["err"] for r in res if r["err"]]
+            refine_errors = [r["err"] for r in res if r["err"]]
+            errors += refine_errors
             sims += len(res)
-        for w, _, _, M, q, _ in per_world:
+        for w, _, _, M, q, _, eq_strat, eq_info, eq_value in per_world:
             value += w * (M @ q)
+    # Action selection
     M, q, their_choices = per_world[0][3], per_world[0][4], [t for t, _ in per_world[0][2]]
-    score = value + prior * logp
-    best = int(score.argmax())
+    if double_oracle and per_world[0][6] is not None:
+        eq_strat = sum(pw[0] * pw[6] for pw in per_world if pw[6] is not None)
+        eq_strat = np.maximum(np.asarray(eq_strat, dtype=np.float64), 0.0)
+        tot = eq_strat.sum()
+        if tot > 0:
+            eq_strat /= tot
+        else:
+            eq_strat = np.ones(len(ours), dtype=np.float64) / len(ours)
+        eq_value = sum(pw[0] * pw[8] for pw in per_world if pw[8] is not None)
+        eq_info = per_world[0][7]
+        score = eq_strat
+        best = int(np.random.choice(len(ours), p=eq_strat))
+    else:
+        eq_strat = eq_value = eq_info = None
+        score = value + prior * logp
+        best = int(score.argmax())
     return ours[best][0], {"M": M, "q": q, "ours": choices, "theirs": their_choices,
                            "actions": np.stack([a for a, _ in ours]), "value": value,
                            "logp": np.array([lp for _, lp in ours]), "obs": obs | {"mask": mask},
-                           "score": score, "errors": errors, "sims": sims}
+                           "score": score, "errors": errors, "sims": sims,
+                           "eq_strat": eq_strat, "eq_value": eq_value, "eq_info": eq_info}
 
 
 class SearchPlayer(NNPlayer):
@@ -907,16 +1134,45 @@ class SearchPlayer(NNPlayer):
 
     def __init__(self, *args, opp_model: Policy | str | Path | None = None, fmt: str,
                  teams_dir: str | Path, showdown: str | Path = "pokemon-showdown", k: int = 6,
-                 opp_k: int = 6, seeds: int = 2, prior: float = 0.0, worlds: int = 1, depth: int = 1,
+                 opp_k: int = 6, seeds: int = 16, prior: float = 0.1, worlds: int = 16, depth: int = 1,
                  k2: int = 3, opp_k2: int = 3, seeds2: int = 1, procs: int = 1, refine: int = 0,
-                 refine_seeds: int = 0, **kwargs):
+                 refine_seeds: int = 0, chance_branching: bool = False, opp_br: int = 0, lanes: int = 1,
+                 backend: str = "vgc-engine", bridge: Bridge | VGCBridge | None = None,
+                 double_oracle: bool = True, closed_sheets: bool = False,
+                 solver: str = "regret", worst_case_weight: float = 0.5,
+                 regret_iterations: int = 2048, value_device: str = "cpu",
+                 ensure_switches: bool = True, **kwargs):
         super().__init__(*args, battle_format=fmt, **kwargs)
+        if backend in ("vgc-engine", "rust"):
+            backend = "vgc-engine"
+        self.closed_sheets = closed_sheets or not kwargs.get("accept_open_team_sheet", True)
         self.opp_model = load_policy(opp_model) if isinstance(opp_model, (str, Path)) else opp_model
         self.fmt, self.teams_dir = fmt, str(teams_dir)
-        self.bridge = Bridge(showdown, procs=procs)
+        # One Bridge's requests all serialize on its lock (needed within a request: a two-turn
+        # search holds it across turn 1 and turn 2). With several concurrent battles, a single
+        # Bridge makes every one of them queue behind the others' searches no matter how high
+        # --concurrency is. `lanes` independent Bridges, picked per battle by tag hash, let that
+        # many battles' searches actually run at once (each still single-flight within its lane).
+        if bridge is not None:
+            self.bridges = [bridge]
+        elif backend in ("vgc-engine", "rust"):
+            self.bridges = [VGCBridge() for _ in range(max(1, lanes))]
+        elif backend == "showdown":
+            self.bridges = [Bridge(showdown, procs=procs) for _ in range(max(1, lanes))]
+        else:
+            raise ValueError(f"unknown search backend {backend!r} (want showdown, vgc-engine, or rust)")
+        self.bridge = self.bridges[0]  # back-compat: bo3.Adapter reads this for its own searches
+        self.backend = backend
         self.k, self.opp_k, self.seeds, self.prior, self.worlds = k, opp_k, seeds, prior, worlds
         self.depth, self.k2, self.opp_k2, self.seeds2 = depth, k2, opp_k2, seeds2
         self.refine, self.refine_seeds = refine, refine_seeds
+        self.chance_branching = chance_branching
+        self.opp_br = opp_br
+        self.ensure_switches = ensure_switches
+        self.double_oracle = double_oracle
+        self.solver, self.worst_case_weight, self.regret_iterations = solver, worst_case_weight, regret_iterations
+        self.value_device = value_device
+        self.search_value_model = self.model if value_device == "cpu" else copy.deepcopy(self.model).to(value_device).eval()
         self.searched = self.fallbacks = self.countered = 0
         self.sims = self.sim_errors = 0  # simulated pairings, and those the bridge failed on
         self.search_time = 0.0
@@ -927,6 +1183,26 @@ class SearchPlayer(NNPlayer):
         # their best reply to our last turn-1 choice by `counter_t1` (0 = off).
         self.counter_t1 = 0.0
         self.last_t1: dict[tuple, str] = {}  # (Bo3 room, our leads, their leads) -> our turn-1 choice
+
+    def _lead_risk(self, l1: Pokemon, l2: Pokemon, foes: list[Pokemon]) -> float:
+        risk = 0.0
+        for lead, partner in [(l1, l2), (l2, l1)]:
+            if getattr(lead, "item", "") == "focussash":
+                continue
+            has_support = any(mv in getattr(partner, "moves", {}) for mv in ("fakeout", "followme", "ragepowder"))
+            lead_spe = lead.base_stats.get("spe", 100)
+            for foe in foes:
+                foe_spe = foe.base_stats.get("spe", 100)
+                if foe_spe > lead_spe:
+                    for t in foe.types:
+                        if t is None:
+                            continue
+                        eff = lead.damage_multiplier(t)
+                        if eff >= 4.0:
+                            risk += 3.0 if not has_support else 0.5
+                        elif eff >= 2.0:
+                            risk += 1.0 if not has_support else 0.2
+        return risk
 
     async def teampreview(self, battle: AbstractBattle) -> str:
         # Opposing species with no MunchStats data yet: fetch them in the background (search
@@ -951,19 +1227,56 @@ class SearchPlayer(NNPlayer):
         if self.rules:
             mask = apply_rules(battle, mask)
         t = time.time()
+        bridge = self.bridges[hash(battle.battle_tag) % len(self.bridges)]
         try:
             # In a worker thread: a search can take seconds, and blocking the event loop that long
             # starves the Showdown websocket's keepalive pings until the server drops the connection.
-            out = await asyncio.to_thread(search, self.model, self.opp_model, self.bridge, battle, mask,
-                                          self.fmt, self.teams_dir, self.rating, self.k, self.opp_k,
-                                          self.seeds, self.prior, self.worlds, self.depth, self.k2,
-                                          self.opp_k2, self.seeds2, self.refine, self.refine_seeds)
+            if self.backend in ("vgc-engine", "rust"):
+                from ai_vgc.nn.rust_search import rust_search
+
+                out = await asyncio.to_thread(
+                    rust_search,
+                    self.model,
+                    self.opp_model,
+                    battle,
+                    mask,
+                    self.fmt,
+                    self.teams_dir,
+                    self.rating,
+                    self.k,
+                    self.opp_k,
+                    self.worlds,
+                    self.depth,
+                    self.k2,
+                    self.opp_k2,
+                    self.refine,
+                    self.prior,
+                    self.double_oracle,
+                    not self.closed_sheets,
+                    None,
+                    bridge,
+                    seeds=self.seeds,
+                    seeds2=self.seeds2,
+                    solver=self.solver,
+                    worst_case_weight=self.worst_case_weight,
+                    regret_iterations=self.regret_iterations,
+                    value_model=self.search_value_model,
+                    chance_nodes=self.chance_branching,
+                    opp_br=self.opp_br,
+                    ensure_switches=self.ensure_switches,
+                )
+            else:
+                out = await asyncio.to_thread(search, self.model, self.opp_model, bridge, battle, mask,
+                                              self.fmt, self.teams_dir, self.rating, self.k, self.opp_k,
+                                              self.seeds, self.prior, self.worlds, self.depth, self.k2,
+                                              self.opp_k2, self.seeds2, self.refine, self.refine_seeds,
+                                              self.chance_branching, self.double_oracle)
         except Exception as e:  # a position the bridge can't handle: play the policy
             self.logger.warning("search failed on turn %s: %r", battle.turn, e)
             out = None
             self.failed_in_a_row += 1
             if self.failed_in_a_row >= 3:  # e.g. it loaded a half-rebuilt dist/: start a fresh one
-                self.bridge.kill()
+                bridge.kill()
                 self.failed_in_a_row = 0
         else:
             self.failed_in_a_row = 0
@@ -973,7 +1286,13 @@ class SearchPlayer(NNPlayer):
             return await super().choose_move(battle)
         self.searched += 1
         self.sims += out[1]["sims"]
-        self.sim_errors += len(out[1]["errors"])
+        self.sim_errors += len(out[1].get("errors", []))
+        # A matrix made entirely of simulator fallbacks has no valid search signal.
+        # Play policy rather than letting default actions decide the matrix game.
+        if "errors" in out[1] and out[1]["sims"] > 0 and len(out[1]["errors"]) == out[1]["sims"]:
+            self.logger.warning("search had no valid simulations on turn %s; using policy", battle.turn)
+            self.fallbacks += 1
+            return await super().choose_move(battle)
         if self.on_search:
             self.on_search(battle, out[1])
         action, d = out[0], out[1]
@@ -990,7 +1309,7 @@ class SearchPlayer(NNPlayer):
             near = np.flatnonzero(d["score"] >= d["score"].max() - self.vary_margin)
             p = np.exp(d["logp"][near] - d["logp"][near].max())
             action = d["actions"][np.random.choice(near, p=p / p.sum())]
-        order = DoublesEnv.action_to_order(action, battle, strict=False)
+        order = safe_action_to_order(action, battle)
         if key:
             self.last_t1[key] = order.message.removeprefix("/choose ")
         return order
