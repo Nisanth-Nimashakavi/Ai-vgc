@@ -223,7 +223,10 @@ class LadderModel19Bot(StatefulShadow19Player):
         print(f"\n[Battle Started] Tag: {clean_tag} | Opponent: {opp} (Rating: {opp_r})", flush=True)
         print(f"  Live Battle URL: https://play.pokemonshowdown.com/{clean_tag}", flush=True)
 
-        # Enforce Showdown battle timer
+        # Enforce Showdown battle timer & tactical inference flags
+        battle._spd_on = True
+        battle._dmg_on = True
+        battle._guess = True
         if self.timer:
             try:
                 await self.ps_client.send_message("/timer on", tag)
@@ -232,6 +235,9 @@ class LadderModel19Bot(StatefulShadow19Player):
         return super().teampreview(battle)
 
     def choose_move(self, battle: Any) -> Any:
+        battle._spd_on = True
+        battle._dmg_on = True
+        battle._guess = True
         order = super().choose_move(battle)
         tag = getattr(battle, "battle_tag", "").lstrip(">")
         print(f"  [{tag} Turn {battle.turn}] Choice: {getattr(order, 'message', str(order))}", flush=True)

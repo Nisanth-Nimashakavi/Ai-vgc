@@ -12,8 +12,8 @@ from typing import Any
 import numpy as np
 import torch
 from poke_env import AccountConfiguration, ServerConfiguration
-from poke_env.battle import Move, Pokemon
-from poke_env.data import to_id_str
+from poke_env.battle import Move, Pokemon, PokemonType, Field
+from poke_env.data import GenData, to_id_str
 from poke_env.player import Player
 from poke_env.player.battle_order import DoubleBattleOrder, DefaultBattleOrder
 from poke_env.teambuilder import Teambuilder
@@ -28,7 +28,7 @@ from ai_vgc.nn.search_inputs19 import search_node_inputs, search_leaf_values
 from ai_vgc.nn.showdown_history19 import observed_opponent_facts
 from ai_vgc.nn.preview18 import TeamPreviewPool, PREVIEW_PLANS
 from ai_vgc.nn.dynamic_team import DynamicOpponentBuilder, create_dynamic_preview_pool
-from ai_vgc.nn.rules import move_fails
+from ai_vgc.nn.rules import _GUESS, move_fails, effective_priority
 from ai_vgc.showdown import ensure_server, account
 from ai_vgc.teams import RandomPoolTeambuilder
 import vgc_engine
@@ -105,6 +105,289 @@ def order_to_action18(order: Any, slot: int, active_mon: Any, active_set: dict, 
             return 19 + base
         return base
     return 18
+
+
+def filter_tactical_blunders(
+    battle: Any,
+    orders: list,
+    pairs: list,
+    act0: Pokemon | None,
+    act1: Pokemon | None,
+    rules: bool,
+) -> tuple[list, list]:
+    """Prunes guaranteed tactical leaks: priority into Armor Tail/Psychic Terrain, friendly-fire
+    Earthquake/Surf, fainted target redirects resulting in 0x type/ability immunities, charge traps,
+    and consecutive Protect spam."""
+    if not rules or not orders:
+        return orders, pairs
+
+    token = _GUESS.set(True)
+    try:
+        living_foes = [m for m in battle.opponent_active_pokemon if m is not None and not m.fainted]
+        living_opp_positions = [
+            i + 1 for i, m in enumerate(battle.opponent_active_pokemon) if m is not None and not m.fainted
+        ]
+
+        PRIORITY_BLOCKING_SPECIES = {"farigiraf", "bruxish", "tsareena"}
+        has_priority_blocker = any(
+            (getattr(f, "species", "") in PRIORITY_BLOCKING_SPECIES)
+            or (getattr(f, "ability", None) and to_id_str(f.ability) in ("armortail", "dazzling", "queenlymajesty"))
+            for f in living_foes
+        )
+        has_psychic_terrain = Field.PSYCHIC_TERRAIN in getattr(battle, "fields", {})
+
+        def resolve_target(tgt_code: int) -> int:
+            if len(living_opp_positions) == 1:
+                return living_opp_positions[0]
+            if tgt_code not in living_opp_positions and living_opp_positions:
+                return living_opp_positions[0]
+            return tgt_code
+
+        def is_priority_blunder(m_order, mon):
+            if not m_order or not isinstance(getattr(m_order, "order", None), Move) or mon is None:
+                return False
+            move = m_order.order
+            prio = effective_priority(battle, mon, move)
+            if prio > 0:
+                if has_priority_blocker:
+                    return True
+                if has_psychic_terrain:
+                    tgt_pos = resolve_target(getattr(m_order, "move_target", 0))
+                    tgt_mon = battle.opponent_active_pokemon[tgt_pos - 1] if 0 < tgt_pos <= len(battle.opponent_active_pokemon) else None
+                    if tgt_mon is not None and getattr(battle, "is_grounded", lambda m: True)(tgt_mon):
+                        return True
+                    if any(getattr(battle, "is_grounded", lambda m: True)(f) for f in living_foes):
+                        return True
+            return False
+
+        def is_charge_trap(m_order, mon):
+            if not m_order or not isinstance(getattr(m_order, "order", None), Move):
+                return False
+            mid = getattr(m_order.order, "id", "")
+            if mid == "electroshot":
+                if getattr(mon, "item", "") == "powerherb":
+                    return False
+                weather = getattr(battle, "weather", {})
+                if not any("rain" in str(w).lower() for w in weather):
+                    return True
+            return False
+
+        def is_protect_spam(m_order, mon):
+            if not m_order or not isinstance(getattr(m_order, "order", None), Move) or mon is None:
+                return False
+            mid = getattr(m_order.order, "id", "")
+            if mid in ("protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap"):
+                return getattr(mon, "protect_counter", 0) >= 1
+            return False
+
+        filtered_orders = []
+        filtered_pairs = []
+
+        for o, (a, b) in zip(orders, pairs):
+            o1 = getattr(o, "first_order", None)
+            o2 = getattr(o, "second_order", None)
+            m1 = getattr(o1, "order", None) if o1 else None
+            m2 = getattr(o2, "order", None) if o2 else None
+            m1_is_move = isinstance(m1, Move) and act0 is not None
+            m2_is_move = isinstance(m2, Move) and act1 is not None
+
+            drop = False
+
+            # 1. Charge traps & Protect spam
+            if m1_is_move and (is_charge_trap(o1, act0) or is_protect_spam(o1, act0)):
+                drop = True
+            if m2_is_move and (is_charge_trap(o2, act1) or is_protect_spam(o2, act1)):
+                drop = True
+
+            # 2. Priority into Armor Tail / Psychic Terrain
+            if not drop:
+                if m1_is_move and is_priority_blunder(o1, act0):
+                    drop = True
+                if m2_is_move and is_priority_blunder(o2, act1):
+                    drop = True
+
+            # 3. Friendly fire spread moves (Earthquake, Surf, Magnitude)
+            if not drop and act0 is not None and act1 is not None and not act0.fainted and not act1.fainted:
+                if m1_is_move and getattr(m1, "id", "") in ("earthquake", "magnitude"):
+                    o2_is_protect = m2_is_move and getattr(m2, "id", "") in (
+                        "protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap", "wideguard"
+                    )
+                    act1_immune = (
+                        PokemonType.FLYING in getattr(act1, "types", ())
+                        or getattr(act1, "ability", "") in ("levitate", "telepathy", "eartheater")
+                        or getattr(act1, "item", "") == "airballoon"
+                    )
+                    if not o2_is_protect and not act1_immune:
+                        all_foes_immune = all(
+                            PokemonType.FLYING in getattr(f, "types", ())
+                            or getattr(f, "ability", "") in ("levitate", "telepathy", "eartheater")
+                            or getattr(f, "item", "") == "airballoon"
+                            for f in living_foes
+                        )
+                        act1_mult = act1.damage_multiplier(m1) if hasattr(act1, "damage_multiplier") else 1.0
+                        if all_foes_immune or act1_mult >= 1.5 or getattr(act1, "current_hp_fraction", 1.0) < 0.45:
+                            drop = True
+
+                if not drop and m2_is_move and getattr(m2, "id", "") in ("earthquake", "magnitude"):
+                    o1_is_protect = m1_is_move and getattr(m1, "id", "") in (
+                        "protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap", "wideguard"
+                    )
+                    act0_immune = (
+                        PokemonType.FLYING in getattr(act0, "types", ())
+                        or getattr(act0, "ability", "") in ("levitate", "telepathy", "eartheater")
+                        or getattr(act0, "item", "") == "airballoon"
+                    )
+                    if not o1_is_protect and not act0_immune:
+                        all_foes_immune = all(
+                            PokemonType.FLYING in getattr(f, "types", ())
+                            or getattr(f, "ability", "") in ("levitate", "telepathy", "eartheater")
+                            or getattr(f, "item", "") == "airballoon"
+                            for f in living_foes
+                        )
+                        act0_mult = act0.damage_multiplier(m2) if hasattr(act0, "damage_multiplier") else 1.0
+                        if all_foes_immune or act0_mult >= 1.5 or getattr(act0, "current_hp_fraction", 1.0) < 0.45:
+                            drop = True
+
+            # 4. Standard move_fails check (Type immunities, abilities, redirections)
+            if not drop:
+                if m1_is_move:
+                    t1 = resolve_target(getattr(o1, "move_target", 0))
+                    fail_reason = move_fails(battle, 0, m1, t1)
+                    if fail_reason:
+                        drop = True
+                if m2_is_move:
+                    t2 = resolve_target(getattr(o2, "move_target", 0))
+                    fail_reason = move_fails(battle, 1, m2, t2)
+                    if fail_reason:
+                        drop = True
+
+            if not drop:
+                filtered_orders.append(o)
+                filtered_pairs.append((a, b))
+
+        if filtered_orders:
+            return filtered_orders, filtered_pairs
+        return orders, pairs
+    finally:
+        _GUESS.reset(token)
+
+
+def evaluate_preview_plans(
+    logits: np.ndarray,
+    battle: Any,
+    t_us: list[dict],
+    t_them: list[dict],
+) -> int:
+    """Evaluate all 180 preview plans using Model 19 logits, lead matchup risks,
+    speed tiers, and archetype counters (e.g. Trick Room, Psyspam, Weather)."""
+    dex = GenData.from_gen(9).pokedex
+    chart = GenData.from_gen(9).type_chart
+
+    def get_types(species_name: str) -> list[str]:
+        entry = dex.get(to_id_str(species_name), {})
+        return entry.get("types", [])
+
+    def get_base_spe(species_name: str) -> int:
+        entry = dex.get(to_id_str(species_name), {})
+        return entry.get("baseStats", {}).get("spe", 80)
+
+    def calc_mult(def_types: list[str], atk_type: str) -> float:
+        mult = 1.0
+        for dt in def_types:
+            eff = chart.get(dt.upper(), {}).get(atk_type.upper(), 1.0)
+            mult *= eff
+        return mult
+
+    scores = logits.copy()
+
+    # Identify opponent archetypes
+    opp_species_set = {to_id_str(m.get("species", "")) for m in t_them} if t_them else set()
+    if not opp_species_set and getattr(battle, "teampreview_opponent_team", None):
+        opp_species_set = {to_id_str(m.species) for m in battle.teampreview_opponent_team}
+
+    has_tr_setter = bool(opp_species_set & {
+        "farigiraf", "indeedee", "indeedeef", "hatterene", "porygon2",
+        "dusclops", "armarouge", "calyrexice", "cresselia"
+    })
+    has_tr_sweeper = bool(opp_species_set & {
+        "camerupt", "ursaluna", "ursalunabloodmoon", "torkoal", "kingambit", "ironhands"
+    })
+    is_trick_room = has_tr_setter and has_tr_sweeper
+
+    has_psyspam = bool(opp_species_set & {"indeedee", "indeedeef"}) and bool(
+        opp_species_set & {"farigiraf", "hatterene", "armarouge", "gardevoir"}
+    )
+    has_rain = bool(opp_species_set & {"pelipper", "politoed"}) and bool(
+        opp_species_set & {"archaludon", "basculegion", "basculegionf", "swampert", "kingdra", "barraskewda"}
+    )
+
+    for plan_id, plan in enumerate(PREVIEW_PLANS):
+        l1_idx, l2_idx = plan[0], plan[1]
+        b1_idx, b2_idx = plan[2], plan[3]
+        bring = [l1_idx, l2_idx, b1_idx, b2_idx]
+
+        lead_mons = [t_us[l1_idx], t_us[l2_idx]] if l1_idx < len(t_us) and l2_idx < len(t_us) else []
+        bring_mons = [t_us[idx] for idx in bring if idx < len(t_us)]
+
+        # 1. Lead Risk & Speed Check
+        lead_risk = 0.0
+        for i_lead, lead in enumerate(lead_mons):
+            partner = lead_mons[1 - i_lead]
+            partner_moves = [to_id_str(m) for m in partner.get("moves", [])]
+            has_support = any(m in partner_moves for m in ("fakeout", "followme", "ragepowder", "wideguard"))
+            lead_item = to_id_str(lead.get("item", ""))
+            if lead_item == "focussash":
+                continue
+
+            lead_spe = lead.get("stats", {}).get("spe") or get_base_spe(lead.get("species", ""))
+            lead_types = get_types(lead.get("species", ""))
+
+            for foe in t_them:
+                foe_spe = foe.get("stats", {}).get("spe") or get_base_spe(foe.get("species", ""))
+                if foe_spe >= lead_spe:
+                    foe_types = get_types(foe.get("species", ""))
+                    for ft in foe_types:
+                        mult = calc_mult(lead_types, ft)
+                        if mult >= 4.0:
+                            lead_risk += 2.0 if not has_support else 0.4
+                        elif mult >= 2.0:
+                            lead_risk += 0.8 if not has_support else 0.15
+
+        scores[plan_id] -= lead_risk
+
+        # 2. Trick Room Counterplay
+        if is_trick_room:
+            for lead in lead_mons:
+                spe = lead.get("stats", {}).get("spe") or get_base_spe(lead.get("species", ""))
+                lead_moves = [to_id_str(m) for m in lead.get("moves", [])]
+                has_anti_tr = any(m in lead_moves for m in ("taunt", "imprison", "trickroom", "spore"))
+                if spe > 115 and not has_anti_tr and lead.get("item", "") != "focussash":
+                    scores[plan_id] -= 2.5
+                if spe < 65 or has_anti_tr:
+                    scores[plan_id] += 1.0
+
+        # 3. Psyspam Counterplay
+        if has_psyspam:
+            for mon in bring_mons:
+                m_types = get_types(mon.get("species", ""))
+                m_moves = [to_id_str(m) for m in mon.get("moves", [])]
+                if "Dark" in m_types or "Steel" in m_types:
+                    scores[plan_id] += 1.2
+                if "wideguard" in m_moves:
+                    scores[plan_id] += 1.8
+
+        # 4. Rain Counterplay
+        if has_rain:
+            for mon in bring_mons:
+                m_types = get_types(mon.get("species", ""))
+                m_moves = [to_id_str(m) for m in mon.get("moves", [])]
+                if "Water" in m_types or "Grass" in m_types or "Dragon" in m_types:
+                    scores[plan_id] += 0.8
+                if "wideguard" in m_moves:
+                    scores[plan_id] += 1.2
+
+    best_plan = int(scores.argmax())
+    return best_plan
 
 def parse_opp_turn_actions(replay_data: list, last_turn: int, opp_role: str) -> tuple[dict | None, dict | None]:
     turn_str = str(last_turn)
@@ -1088,27 +1371,26 @@ def search_turn_19(
 
         pi_search, pi_opp, game_val = solve_regret_matching(M, opp_prior=opp_priors)
 
-        # Spec formulation: P(move) ∝ π(move)^γ * exp(β * (q(move) - V))
-        q_vals = M @ pi_opp  # Expected value under opponent equilibrium
+        # Blend opponent strategy: 50% Nash equilibrium + 50% greedy prior to account for human ladder play
+        opp_eval = 0.5 * pi_opp + 0.5 * opp_priors
+        opp_eval /= (opp_eval.sum() + 1e-8)
+        q_vals = M @ opp_eval  # Expected value under balanced opponent model
         v_root = float(game_val)
-        advantages = q_vals - v_root
 
-        prior_term = np.power(np.maximum(our_priors, 1e-12), search_gamma)
-        exp_term = np.exp(np.clip(search_beta * advantages, -50.0, 50.0))
-        p_unnorm = prior_term * exp_term
-        p_sum = p_unnorm.sum()
-        if p_sum > 0 and not np.isnan(p_sum):
-            p_strat = p_unnorm / p_sum
-        else:
-            p_strat = (1.0 - blend_alpha) * our_priors + blend_alpha * pi_search
-            p_strat /= (p_strat.sum() + 1e-8)
+        # Value-dominant action selection:
+        # Expected search payoff q_vals is primary; policy prior is a secondary tie-breaker
+        scores = q_vals + 0.05 * np.log(np.maximum(our_priors, 1e-6))
+        # Mask moves that are strictly worse than the best searched move by >= 0.20
+        scores[q_vals < np.max(q_vals) - 0.20] = -1e9
 
         if deterministic:
-            best_idx = int(np.argmax(p_strat))
+            best_idx = int(np.argmax(scores))
         else:
+            exp_term = np.exp(np.clip(search_beta * (scores - np.max(scores)), -50.0, 50.0))
+            p_strat = exp_term / (exp_term.sum() + 1e-8)
             best_idx = int(np.random.choice(len(our_cands), p=p_strat))
 
-        return our_cands[best_idx][0], game_val
+        return our_cands[best_idx][0], float(q_vals[best_idx])
     except Exception as e:
         import traceback; traceback.print_exc()
         if diagnostics is not None:
@@ -1196,10 +1478,12 @@ class StatefulShadow19Player(Player):
                 preview_moves=torch.from_numpy(moves).to(self.device),
                 preview_only=True,
             )
-            logits = out["preview_plan"][0].float()
-            plan_id = int(logits.argmax().item() if self.deterministic else
-                          torch.distributions.Categorical(logits=logits).sample().item())
+            logits = out["preview_plan"][0].float().cpu().numpy()
+            plan_id = evaluate_preview_plans(logits, battle, t_us, t_them)
         picks = list(PREVIEW_PLANS[plan_id])
+        lead_names = [t_us[picks[0]]["species"], t_us[picks[1]]["species"]]
+        back_names = [t_us[picks[2]]["species"], t_us[picks[3]]["species"]]
+        print(f"[Preview Evaluated] Plan {plan_id}: Leads={lead_names}, Back={back_names}", flush=True)
         mgr.set_picks(picks)
 
         ours = list(battle.team.values())
@@ -1326,46 +1610,7 @@ class StatefulShadow19Player(Player):
                 orders = [orders[i] for i in valid_indices]
                 pairs = [pairs[i] for i in valid_indices]
 
-            def is_charge_trap(m_order, mon):
-                if not m_order or not isinstance(getattr(m_order, 'order', None), Move):
-                    return False
-                mid = getattr(m_order.order, 'id', '')
-                if mid == 'electroshot':
-                    if getattr(mon, 'item', '') == 'powerherb':
-                        return False
-                    weather = getattr(battle, 'weather', {})
-                    if not any('rain' in str(w).lower() for w in weather):
-                        return True
-                return False
-
-            filtered_orders = []
-            filtered_pairs = []
-            for o, (a, b) in zip(orders, pairs):
-                drop = False
-                if is_charge_trap(getattr(o, 'first_order', None), act0):
-                    drop = True
-                if is_charge_trap(getattr(o, 'second_order', None), act1):
-                    drop = True
-                o1 = getattr(o, "first_order", None)
-                if o1 and isinstance(getattr(o1, "order", None), Move) and act0 is not None:
-                    target_code = getattr(o1, "move_target", 0)
-                    if move_fails(battle, 0, o1.order, target_code):
-                        drop = True
-                    if getattr(o1.order, "id", "") in ("protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap") and getattr(act0, "protect_counter", 0) >= 1:
-                        drop = True
-                o2 = getattr(o, "second_order", None)
-                if o2 and isinstance(getattr(o2, "order", None), Move) and act1 is not None:
-                    target_code = getattr(o2, "move_target", 0)
-                    if move_fails(battle, 1, o2.order, target_code):
-                        drop = True
-                    if getattr(o2.order, "id", "") in ("protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap") and getattr(act1, "protect_counter", 0) >= 1:
-                        drop = True
-                if not drop:
-                    filtered_orders.append(o)
-                    filtered_pairs.append((a, b))
-            if filtered_orders and self.rules:
-                orders = filtered_orders
-                pairs = filtered_pairs
+            orders, pairs = filter_tactical_blunders(battle, orders, pairs, act0, act1, self.rules)
 
             raw = json.loads(native.to_json())
             raw_us = raw["p1"] if side == 0 else raw["p2"]
