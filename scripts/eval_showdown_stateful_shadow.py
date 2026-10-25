@@ -1130,6 +1130,7 @@ class StatefulShadow19Player(Player):
                  rules: bool = True,
                  **kwargs):
         super().__init__(**kwargs)
+        self.team = getattr(self, "_team", None)
         self.model = model
         self.pool = pool
         self.t_us = t_us
@@ -1172,7 +1173,8 @@ class StatefulShadow19Player(Player):
         side = 0 if battle.player_role == "p1" else 1
         tracker = self.belief_bank.tracker() if self.belief_bank else None
 
-        t_us = getattr(self.team, "last_team_json", None) or self.t_us
+        tb = getattr(self, "rotating_builder", None) or getattr(self, "_team", None) or getattr(self, "team", None)
+        t_us = getattr(tb, "last_team_json", None) or self.t_us
 
         if self.dynamic_builder is not None:
             opp_species = list(battle.teampreview_opponent_team) if battle.teampreview_opponent_team else []
@@ -1181,7 +1183,7 @@ class StatefulShadow19Player(Player):
             print(f"[Preview] Dynamically reconstructed opponent team: {[m['species'] for m in t_them]}", flush=True)
         else:
             t_them = self.t_them
-            pool = create_dynamic_preview_pool(t_us, t_them) if getattr(self.team, "last_team_json", None) else self.pool
+            pool = create_dynamic_preview_pool(t_us, t_them) if getattr(tb, "last_team_json", None) else self.pool
 
         mgr = ShadowBattleManager(pool, t_us, t_them, side, self.sets_dir, tracker)
         self.shadow_managers[battle.battle_tag] = mgr
@@ -1239,14 +1241,15 @@ class StatefulShadow19Player(Player):
             mgr = self.shadow_managers.get(battle.battle_tag)
             if mgr is None:
                 tracker = self.belief_bank.tracker() if self.belief_bank else None
-                t_us = getattr(self.team, "last_team_json", None) or self.t_us
+                tb = getattr(self, "rotating_builder", None) or getattr(self, "_team", None) or getattr(self, "team", None)
+                t_us = getattr(tb, "last_team_json", None) or self.t_us
                 if self.dynamic_builder is not None:
                     opp_species = list(battle.opponent_team.values()) if battle.opponent_team else []
                     t_them = self.dynamic_builder.build_team(opp_species)
                     pool = create_dynamic_preview_pool(t_us, t_them)
                 else:
                     t_them = self.t_them
-                    pool = create_dynamic_preview_pool(t_us, t_them) if getattr(self.team, "last_team_json", None) else self.pool
+                    pool = create_dynamic_preview_pool(t_us, t_them) if getattr(tb, "last_team_json", None) else self.pool
                 mgr = ShadowBattleManager(pool, t_us, t_them, side, self.sets_dir, tracker)
                 mgr.set_picks([0, 1, 2, 3])
                 self.shadow_managers[battle.battle_tag] = mgr

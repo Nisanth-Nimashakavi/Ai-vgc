@@ -112,6 +112,7 @@ class LadderModel19Bot(StatefulShadow19Player):
         self.rotating_builder = rotating_builder
         self.teams_dir = teams_dir
         self.battle_teams = {}
+        self.team = getattr(self, "_team", None)
 
     def _busy(self) -> bool:
         """True if any battle is currently active/unfinished."""
