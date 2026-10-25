@@ -929,20 +929,6 @@ def search_turn_19(
         out_a = model(c, n, **history)
         la = out_a["policy_a"][0].clone()
         la[~m0] = -1e9
-        prob_a = la.softmax(-1)
-        top_prob_a, top_a_idx = prob_a.max().item(), int(prob_a.argmax().item())
-
-        # Fast-Path: If policy is >=85% confident on an obvious move, exit immediately (<2ms)
-        if top_prob_a >= 0.85:
-            mb_fast = conditioned_b_mask(m1.unsqueeze(0), torch.tensor([top_a_idx], device=device))[0]
-            out_b_fast = model(c, n, action_a=torch.tensor([top_a_idx], device=device), **history)
-            lb_fast = out_b_fast["policy_b"][0].clone()
-            lb_fast[~mb_fast] = -1e9
-            prob_b = lb_fast.softmax(-1)
-            top_prob_b, top_b_idx = prob_b.max().item(), int(prob_b.argmax().item())
-            if (top_prob_a * top_prob_b) >= 0.80 and (top_a_idx, top_b_idx) in valid_pairs:
-                return (top_a_idx, top_b_idx), 0.0
-
         la = la.log_softmax(-1)
         num_a = min(5, max(1, int(m0.sum().item())))
         top_a = la.topk(num_a).indices.tolist()
@@ -1213,8 +1199,8 @@ def search_turn_19(
         v_root = float(game_val)
 
         # Value-dominant action selection:
-        # Expected search payoff q_vals is primary; policy prior is a secondary tie-breaker
-        scores = q_vals + 0.05 * np.log(np.maximum(our_priors, 1e-6))
+        # Expected search payoff q_vals is primary; policy prior is a secondary tie-breaker (1e-3)
+        scores = q_vals + 1e-3 * np.log(np.maximum(our_priors, 1e-6))
         # Mask moves that are strictly worse than the best searched move by >= 0.20
         scores[q_vals < np.max(q_vals) - 0.20] = -1e9
 
