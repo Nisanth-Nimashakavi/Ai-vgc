@@ -28,7 +28,7 @@ from ai_vgc.nn.search_inputs19 import search_node_inputs, search_leaf_values
 from ai_vgc.nn.showdown_history19 import observed_opponent_facts
 from ai_vgc.nn.preview18 import TeamPreviewPool, PREVIEW_PLANS
 from ai_vgc.nn.dynamic_team import DynamicOpponentBuilder, create_dynamic_preview_pool
-from ai_vgc.nn.rules import _GUESS, move_fails, effective_priority
+from ai_vgc.nn.rules import move_fails
 from ai_vgc.showdown import ensure_server, account
 from ai_vgc.teams import RandomPoolTeambuilder
 import vgc_engine
@@ -105,171 +105,6 @@ def order_to_action18(order: Any, slot: int, active_mon: Any, active_set: dict, 
             return 19 + base
         return base
     return 18
-
-
-def filter_tactical_blunders(
-    battle: Any,
-    orders: list,
-    pairs: list,
-    act0: Pokemon | None,
-    act1: Pokemon | None,
-    rules: bool,
-) -> tuple[list, list]:
-    """Prunes guaranteed tactical leaks: priority into Armor Tail/Psychic Terrain, friendly-fire
-    Earthquake/Surf, fainted target redirects resulting in 0x type/ability immunities, charge traps,
-    and consecutive Protect spam."""
-    if not rules or not orders:
-        return orders, pairs
-
-    token = _GUESS.set(True)
-    try:
-        living_foes = [m for m in battle.opponent_active_pokemon if m is not None and not m.fainted]
-        living_opp_positions = [
-            i + 1 for i, m in enumerate(battle.opponent_active_pokemon) if m is not None and not m.fainted
-        ]
-
-        PRIORITY_BLOCKING_SPECIES = {"farigiraf", "bruxish", "tsareena"}
-        has_priority_blocker = any(
-            (getattr(f, "species", "") in PRIORITY_BLOCKING_SPECIES)
-            or (getattr(f, "ability", None) and to_id_str(f.ability) in ("armortail", "dazzling", "queenlymajesty"))
-            for f in living_foes
-        )
-        has_psychic_terrain = Field.PSYCHIC_TERRAIN in getattr(battle, "fields", {})
-
-        def resolve_target(tgt_code: int) -> int:
-            if len(living_opp_positions) == 1:
-                return living_opp_positions[0]
-            if tgt_code not in living_opp_positions and living_opp_positions:
-                return living_opp_positions[0]
-            return tgt_code
-
-        def is_priority_blunder(m_order, mon):
-            if not m_order or not isinstance(getattr(m_order, "order", None), Move) or mon is None:
-                return False
-            move = m_order.order
-            prio = effective_priority(battle, mon, move)
-            if prio > 0:
-                if has_priority_blocker:
-                    return True
-                if has_psychic_terrain:
-                    tgt_pos = resolve_target(getattr(m_order, "move_target", 0))
-                    tgt_mon = battle.opponent_active_pokemon[tgt_pos - 1] if 0 < tgt_pos <= len(battle.opponent_active_pokemon) else None
-                    if tgt_mon is not None and getattr(battle, "is_grounded", lambda m: True)(tgt_mon):
-                        return True
-                    if any(getattr(battle, "is_grounded", lambda m: True)(f) for f in living_foes):
-                        return True
-            return False
-
-        def is_charge_trap(m_order, mon):
-            if not m_order or not isinstance(getattr(m_order, "order", None), Move):
-                return False
-            mid = getattr(m_order.order, "id", "")
-            if mid == "electroshot":
-                if getattr(mon, "item", "") == "powerherb":
-                    return False
-                weather = getattr(battle, "weather", {})
-                if not any("rain" in str(w).lower() for w in weather):
-                    return True
-            return False
-
-        def is_protect_spam(m_order, mon):
-            if not m_order or not isinstance(getattr(m_order, "order", None), Move) or mon is None:
-                return False
-            mid = getattr(m_order.order, "id", "")
-            if mid in ("protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap"):
-                return getattr(mon, "protect_counter", 0) >= 1
-            return False
-
-        filtered_orders = []
-        filtered_pairs = []
-
-        for o, (a, b) in zip(orders, pairs):
-            o1 = getattr(o, "first_order", None)
-            o2 = getattr(o, "second_order", None)
-            m1 = getattr(o1, "order", None) if o1 else None
-            m2 = getattr(o2, "order", None) if o2 else None
-            m1_is_move = isinstance(m1, Move) and act0 is not None
-            m2_is_move = isinstance(m2, Move) and act1 is not None
-
-            drop = False
-
-            # 1. Charge traps & Protect spam
-            if m1_is_move and (is_charge_trap(o1, act0) or is_protect_spam(o1, act0)):
-                drop = True
-            if m2_is_move and (is_charge_trap(o2, act1) or is_protect_spam(o2, act1)):
-                drop = True
-
-            # 2. Priority into Armor Tail / Psychic Terrain
-            if not drop:
-                if m1_is_move and is_priority_blunder(o1, act0):
-                    drop = True
-                if m2_is_move and is_priority_blunder(o2, act1):
-                    drop = True
-
-            # 3. Friendly fire spread moves (Earthquake, Surf, Magnitude)
-            if not drop and act0 is not None and act1 is not None and not act0.fainted and not act1.fainted:
-                if m1_is_move and getattr(m1, "id", "") in ("earthquake", "magnitude"):
-                    o2_is_protect = m2_is_move and getattr(m2, "id", "") in (
-                        "protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap", "wideguard"
-                    )
-                    act1_immune = (
-                        PokemonType.FLYING in getattr(act1, "types", ())
-                        or getattr(act1, "ability", "") in ("levitate", "telepathy", "eartheater")
-                        or getattr(act1, "item", "") == "airballoon"
-                    )
-                    if not o2_is_protect and not act1_immune:
-                        all_foes_immune = all(
-                            PokemonType.FLYING in getattr(f, "types", ())
-                            or getattr(f, "ability", "") in ("levitate", "telepathy", "eartheater")
-                            or getattr(f, "item", "") == "airballoon"
-                            for f in living_foes
-                        )
-                        act1_mult = act1.damage_multiplier(m1) if hasattr(act1, "damage_multiplier") else 1.0
-                        if all_foes_immune or act1_mult >= 1.5 or getattr(act1, "current_hp_fraction", 1.0) < 0.45:
-                            drop = True
-
-                if not drop and m2_is_move and getattr(m2, "id", "") in ("earthquake", "magnitude"):
-                    o1_is_protect = m1_is_move and getattr(m1, "id", "") in (
-                        "protect", "detect", "spikyshield", "banefulbunker", "burningbulwark", "silktrap", "wideguard"
-                    )
-                    act0_immune = (
-                        PokemonType.FLYING in getattr(act0, "types", ())
-                        or getattr(act0, "ability", "") in ("levitate", "telepathy", "eartheater")
-                        or getattr(act0, "item", "") == "airballoon"
-                    )
-                    if not o1_is_protect and not act0_immune:
-                        all_foes_immune = all(
-                            PokemonType.FLYING in getattr(f, "types", ())
-                            or getattr(f, "ability", "") in ("levitate", "telepathy", "eartheater")
-                            or getattr(f, "item", "") == "airballoon"
-                            for f in living_foes
-                        )
-                        act0_mult = act0.damage_multiplier(m2) if hasattr(act0, "damage_multiplier") else 1.0
-                        if all_foes_immune or act0_mult >= 1.5 or getattr(act0, "current_hp_fraction", 1.0) < 0.45:
-                            drop = True
-
-            # 4. Standard move_fails check (Type immunities, abilities, redirections)
-            if not drop:
-                if m1_is_move:
-                    t1 = resolve_target(getattr(o1, "move_target", 0))
-                    fail_reason = move_fails(battle, 0, m1, t1)
-                    if fail_reason:
-                        drop = True
-                if m2_is_move:
-                    t2 = resolve_target(getattr(o2, "move_target", 0))
-                    fail_reason = move_fails(battle, 1, m2, t2)
-                    if fail_reason:
-                        drop = True
-
-            if not drop:
-                filtered_orders.append(o)
-                filtered_pairs.append((a, b))
-
-        if filtered_orders:
-            return filtered_orders, filtered_pairs
-        return orders, pairs
-    finally:
-        _GUESS.reset(token)
 
 
 def evaluate_preview_plans(
@@ -1609,8 +1444,6 @@ class StatefulShadow19Player(Player):
             if valid_indices:
                 orders = [orders[i] for i in valid_indices]
                 pairs = [pairs[i] for i in valid_indices]
-
-            orders, pairs = filter_tactical_blunders(battle, orders, pairs, act0, act1, self.rules)
 
             raw = json.loads(native.to_json())
             raw_us = raw["p1"] if side == 0 else raw["p2"]
