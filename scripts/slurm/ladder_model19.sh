@@ -18,11 +18,15 @@ if [[ -f "$HOME/.config/ai-vgc/showdown.env" ]]; then
   source "$HOME/.config/ai-vgc/showdown.env"
 fi
 
-TEAM=${1:-"data/teams/reg_mc_top_meta/MC371.txt"}
+TEAM=${1:-"top10"}
 GAMES=${2:-10}
 
 EXTRA_ARGS=()
-if [[ "$TEAM" == "pool" || -d "$TEAM" ]]; then
+if [[ "$TEAM" == "top10" || "$TEAM" == "top" ]]; then
+  TEAMS_DIR="data/teams/reg_mc_top_meta"
+  EXTRA_ARGS+=(--teams-dir "$TEAMS_DIR")
+  echo "Starting Model 19 Ladder session with Top 10 Meta Teams ($TEAMS_DIR) for $GAMES games on GPU..."
+elif [[ "$TEAM" == "pool" || -d "$TEAM" ]]; then
   TEAMS_DIR="$TEAM"
   if [[ "$TEAM" == "pool" ]]; then
     TEAMS_DIR="data/teams/pool_5600/holdout_clean"

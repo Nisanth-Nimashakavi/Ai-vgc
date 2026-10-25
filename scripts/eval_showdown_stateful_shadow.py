@@ -1525,12 +1525,13 @@ async def run_benchmark(
     config = ServerConfiguration(f"ws://localhost:{port}/showdown/websocket", "https://play.pokemonshowdown.com/action.php?")
     fmt = "gen9championsvgc2026regmc"
 
-    is_pool_us = my_team.lower() in ("pool", "all", "field")
+    is_pool_us = my_team.lower() in ("pool", "all", "field", "top10", "top") or Path(my_team).is_dir()
     if is_pool_us:
-        tb_us = RandomPoolTeambuilder(Path(pool_dir), cycle=True)
+        target_dir = Path("data/teams/reg_mc_top_meta") if my_team.lower() in ("top10", "top") else (Path(my_team) if Path(my_team).is_dir() else Path(pool_dir))
+        tb_us = RandomPoolTeambuilder(target_dir, cycle=True)
         team_json = tb_us._team_jsons[0]
         pool = TeamPreviewPool([team_json, team_json])
-        my_team_file = Path(pool_dir) / f"{tb_us._names[0]}.txt"
+        my_team_file = target_dir / f"{tb_us._names[0]}.txt"
     else:
         my_team_file = Path("data/teams/reg_mc") / f"{my_team}.txt" if not my_team.endswith(".txt") else Path(my_team)
         if not my_team_file.exists():
